@@ -1,13 +1,19 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:ChatClient.ViewModels"
+        xmlns:model="using:ChatClient.Models"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
         x:Class="ChatClient.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
+        xmlns:conv="using:ChatClient.Converters"
         Icon="/Assets/avalonia-logo.ico"
         Title="ChatClient">
+
+    <Window.Resources>
+        <conv:HalfValueConverter x:Key="HalfValueConverter"/>
+    </Window.Resources>
 
     <Design.DataContext>
         <!-- This only sets the DataContext for the previewer in an IDE,
@@ -15,6 +21,60 @@
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-    <TextBlock Text="{Binding Greeting}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+    <Grid RowDefinitions="Auto,*,Auto" RowSpacing="12" Margin="16">
+        <TextBlock Grid.Row="0"
+                   FontSize="20"
+                   FontWeight="SemiBold"
+                   Text="ChatClient Conversation"
+                   HorizontalAlignment="Left"/>
+
+        <Border Grid.Row="1"
+                Background="#0A000000"
+                CornerRadius="6"
+                Padding="12">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Messages}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="model:Message">
+                            <Border Margin="0 0 0 12"
+                                    Padding="8"
+                                    CornerRadius="6"
+                                    Background="#FFFFFFFF">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Author}"
+                                               FontSize="13"
+                                               FontWeight="Bold"
+                                               Foreground="#AA000000"/>
+                                    <TextBlock Text="{Binding Content}"
+                                               TextWrapping="Wrap"
+                                               Margin="0 4 0 0"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+
+        <Border Grid.Row="2"
+                Background="#0F000000"
+                CornerRadius="6"
+                Padding="12 12 12 16">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                <TextBox Grid.Column="0"
+                         Text="{Binding Prompt, UpdateSourceTrigger=PropertyChanged}"
+                         TextWrapping="Wrap"
+                         AcceptsReturn="True"
+                         MinLines="3"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         Watermark="Type your message..."
+                         MaxHeight="{Binding Bounds.Height, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource HalfValueConverter}}"/>
+                <Button Grid.Column="1"
+                        Content="Send"
+                        Padding="20 12"
+                        Command="{Binding SendCommand}"/>
+            </Grid>
+        </Border>
+    </Grid>
 
 </Window>
