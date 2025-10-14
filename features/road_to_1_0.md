@@ -15,19 +15,18 @@
 - Add `Prompt` and `SendCommand` properties; bind the input `TextBox` to `Prompt` and the send button to `SendCommand`.
 
 ## Milestone 3: LLM Service Integration
-- **Status:** Pending
-- Define an abstraction such as `ILlmClient` to decouple the UI from the backend provider.
-- Implement an `HttpClient`-based service (e.g., `HttpLlmClient`) targeting the selected LLM endpoint (OpenAI, Azure, local, etc.).
-- In `SendCommand`, append the user message, await the LLM response, and add the assistant reply.
-- Handle faults gracefully with `try`/`catch`, surfacing usable errors to the UI and logs.
-- Load secrets (API keys, endpoints) exclusively from environment variables or .NET user secrets.
+- **Status:** Completed
+- Added an `ILlmClient` abstraction plus provider-specific clients for OpenAI, Anthropic, and OpenRouter driven by environment variables.
+- Implemented a factory that selects the provider via `LLM_PROVIDER`, defaulting to OpenAI, and validates required keys/models.
+- Updated the view-model to send prompts asynchronously, append assistant replies, and surface errors as system messages while keeping the UI responsive.
+- Ensured all secrets are supplied externally (environment variables) so nothing sensitive is hard-coded.
 
 ## Milestone 4: Responsive and Stateful Experience
 - **Status:** Pending
-- Offload network calls and other heavy work onto background tasks or async commands so the UI thread stays responsive.
-- Show progress indicators (e.g., disable send button, display typing indicator) during LLM calls.
+- Add richer feedback (typing indicator, disabled inputs, retry affordances) while awaiting LLM responses.
 - Serialize and persist the `Messages` collection (JSON via `System.Text.Json`) to provide session continuity.
 - Reload prior chats at startup, with sensible limits on stored history to manage disk usage.
+- Implement auto-scroll and timestamps formatting to keep the experience polished across providers.
 
 ## Milestone 5: Cross-Platform Packaging and Delivery
 - **Status:** Pending
@@ -37,7 +36,7 @@
 - Document deployment steps, update notes, and system requirements for beta testers.
 
 ## Natural Next Steps
-- Select the LLM backend and provision credentials.
-- Flesh out XAML bindings and finish the chat layout polish.
-- Implement the LLM service and plug it into `SendCommand`.
-- Add quality-of-life enhancements (loading indicator, markdown rendering, configuration dialog) once the end-to-end flow works.
+- Provision API keys for the target providers and verify end-to-end responses in each environment.
+- Extend the UI polish (assistant/user theming, auto-scroll, typing indicators) to improve readability.
+- Begin Milestone 4 work: persist conversation history locally and surface connection state (loading/error) to users.
+- Plan packaging requirements per platform in preparation for Milestone 5.
