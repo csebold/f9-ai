@@ -1,0 +1,98 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:ChatClient.ViewModels"
+        xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+        mc:Ignorable="d"
+        x:Class="ChatClient.Views.SplashWindow"
+        x:DataType="vm:SplashScreenViewModel"
+        Width="420"
+        Height="360"
+        SystemDecorations="None"
+        ShowInTaskbar="False"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent"
+        WindowStartupLocation="CenterScreen"
+        CanResize="False"
+        Topmost="True">
+  <Border Background="#DD1E1E28"
+          CornerRadius="16"
+          Padding="24"
+          BoxShadow="0 12 24 0 #80000000">
+    <StackPanel Spacing="16" HorizontalAlignment="Center">
+      <Border Width="160"
+              Height="160"
+              CornerRadius="80"
+              Background="#AA2C2F45"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              RenderTransformOrigin="0.5,0.5"
+              x:Name="GearBorder">
+        <Border.RenderTransform>
+          <RotateTransform Angle="0"/>
+        </Border.RenderTransform>
+        <Grid>
+          <Path Stroke="#FF4C5C96"
+                StrokeThickness="2">
+            <Path.Data>
+              <GeometryGroup FillRule="EvenOdd">
+                <PathGeometry Figures="M80,10 L100,18 113,10 130,27 122,40 130,48 130,80 122,88 130,100 113,118 100,110 80,120 60,110 47,118 30,100 38,88 30,80 30,48 38,40 30,27 47,10 60,18 Z"/>
+                <EllipseGeometry Center="80,64" RadiusX="20" RadiusY="20"/>
+              </GeometryGroup>
+            </Path.Data>
+            <Path.Fill>
+              <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Offset="0" Color="#FFF2F5FF"/>
+                <GradientStop Offset="0.5" Color="#FF8692C6"/>
+                <GradientStop Offset="1" Color="#FF3A4468"/>
+              </LinearGradientBrush>
+            </Path.Fill>
+          </Path>
+          <Ellipse Width="60"
+                   Height="20"
+                   Fill="#55212A42"
+                   VerticalAlignment="Bottom"
+                   Margin="0,-16,0,-8"/>
+          <Ellipse Width="36"
+                   Height="36"
+                   Stroke="#FF4C5C96"
+                   StrokeThickness="3"
+                   Fill="#FF1E2437"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"/>
+        </Grid>
+      </Border>
+
+      <TextBlock Text="Foundry-9 AI is starting..."
+                 FontSize="18"
+                 FontWeight="SemiBold"
+                 Foreground="#FFE8ECFF"
+                 HorizontalAlignment="Center"/>
+
+      <Border Background="#661C2032"
+              CornerRadius="12"
+              Padding="12"
+              Width="330">
+        <ScrollViewer MaxHeight="120"
+                      VerticalScrollBarVisibility="Auto">
+          <ItemsControl ItemsSource="{Binding StatusMessages}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="sys:String">
+                <TextBlock Text="{Binding .}"
+                           Foreground="#FFBAC2E6"
+                           FontSize="12"
+                           TextWrapping="Wrap"/>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Border>
+
+      <TextBlock Text="Preparing systems..."
+                 FontSize="12"
+                 Foreground="#FF9EAAD6"
+                 HorizontalAlignment="Center"/>
+    </StackPanel>
+  </Border>
+</Window>

@@ -1,10 +1,13 @@
 using System;
+using System.Linq;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Data.Core;
 using Avalonia.Data.Core.Plugins;
-using System.Linq;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
+using ChatClient.Models;
 using ChatClient.Services;
 using ChatClient.ViewModels;
 using ChatClient.Views;
@@ -13,6 +16,10 @@ namespace ChatClient;
 
 public partial class App : Application
 {
+    private ISettingsService _settingsService = null!;
+    private IModelCatalogService _modelCatalogService = null!;
+    private AppSettings _settings = null!;
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -26,12 +33,21 @@ public partial class App : Application
             // More info: https://docs.avaloniaui.net/docs/guides/development-guides/data-validation#manage-validationplugins
             DisableAvaloniaDataAnnotationValidation();
 
-            var registration = CreateLlmRegistration();
+            _settingsService = new SettingsService();
+            _modelCatalogService = new ModelCatalogService();
 
-            desktop.MainWindow = new MainWindow
+            var splashViewModel = new SplashScreenViewModel();
+            var splashWindow = new SplashWindow
             {
-                DataContext = new MainWindowViewModel(registration),
+                DataContext = splashViewModel
             };
+
+            splashViewModel.AddStatus("Starting Foundry-9 AI...");
+            splashWindow.Show();
+
+            desktop.Exit += OnDesktopExit;
+
+            _ = InitializeApplicationAsync(desktop, splashWindow, splashViewModel);
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -50,16 +66,70 @@ public partial class App : Application
         }
     }
 
-    private static LlmClientRegistration CreateLlmRegistration()
+    private static LlmClientRegistration CreateLlmRegistration(AppSettings settings)
     {
         try
         {
-            return LlmClientFactory.CreateDefault();
+            return LlmClientFactory.CreateFromSettings(settings);
         }
         catch (Exception ex)
         {
             var detail = $"LLM configuration error: {ex.Message}";
             return new LlmClientRegistration(new FallbackLlmClient(detail), "Unavailable", "N/A", detail);
+        }
+    }
+
+    private async Task InitializeApplicationAsync(IClassicDesktopStyleApplicationLifetime desktop, SplashWindow splashWindow, SplashScreenViewModel splashViewModel)
+    {
+        void PostStatus(string message) =>
+            Dispatcher.UIThread.Post(() => splashViewModel.AddStatus(message));
+
+        try
+        {
+            PostStatus("Loading user settings...");
+            _settings = await _settingsService.LoadAsync().ConfigureAwait(false);
+
+            var providerName = _settings.Provider.ToString();
+            PostStatus($"Configuring provider: {providerName}...");
+
+            var registration = CreateLlmRegistration(_settings);
+
+            PostStatus("Checking MCP integrations (coming soon)...");
+            PostStatus("Finalizing UI...");
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                var mainWindowViewModel = new MainWindowViewModel(registration);
+                var mainWindow = new MainWindow(_settingsService, _modelCatalogService, _settings)
+                {
+                    DataContext = mainWindowViewModel
+                };
+
+                PostStatus("Startup complete.");
+
+                desktop.MainWindow = mainWindow;
+                mainWindow.Show();
+                splashWindow.Close();
+            });
+        }
+        catch (Exception ex)
+        {
+            PostStatus($"Startup failed: {ex.Message}");
+            await Task.Delay(2000).ConfigureAwait(false);
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                splashWindow.Close();
+                desktop.Shutdown();
+            });
+        }
+    }
+
+    private void OnDesktopExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
+    {
+        if (_modelCatalogService is IDisposable disposable)
+        {
+            disposable.Dispose();
         }
     }
 }

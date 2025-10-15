@@ -1,0 +1,73 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:ChatClient.ViewModels"
+        mc:Ignorable="d"
+        x:Class="ChatClient.Views.SettingsWindow"
+        x:DataType="vm:SettingsViewModel"
+        Title="Settings"
+        Width="480"
+        Height="600"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner">
+  <ScrollViewer>
+    <StackPanel Margin="16" Spacing="12">
+      <TextBlock Text="Provider" FontWeight="Bold"/>
+      <ComboBox ItemsSource="{Binding Providers}"
+                SelectedItem="{Binding SelectedProviderOption}">
+        <ComboBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:SettingsViewModel+ProviderOption">
+            <TextBlock Text="{Binding DisplayName}"/>
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+
+      <Separator/>
+
+      <StackPanel Spacing="8">
+        <TextBlock Text="OpenAI API Key"/>
+        <TextBox Text="{Binding OpenAiApiKey}" Watermark="sk-..." />
+      </StackPanel>
+
+      <StackPanel Spacing="8">
+        <TextBlock Text="Anthropic API Key"/>
+        <TextBox Text="{Binding AnthropicApiKey}" Watermark="sk-ant-..." />
+      </StackPanel>
+
+      <StackPanel Spacing="8">
+        <TextBlock Text="OpenRouter API Key"/>
+        <TextBox Text="{Binding OpenRouterApiKey}" Watermark="org-..." />
+      </StackPanel>
+
+      <Separator/>
+
+      <TextBlock Text="Model" FontWeight="Bold"/>
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <ComboBox Width="300"
+                  ItemsSource="{Binding AvailableModels}"
+                  SelectedItem="{Binding SelectedModel}"/>
+        <Button Content="Refresh"
+                Command="{Binding FetchModelsCommand}"/>
+      </StackPanel>
+
+      <ProgressBar IsIndeterminate="True"
+                   IsVisible="{Binding IsBusy}"
+                   Height="4"/>
+
+      <TextBlock Text="{Binding StatusMessage}"
+                 Foreground="Gray"
+                 TextWrapping="Wrap"/>
+
+      <StackPanel Orientation="Horizontal"
+                  HorizontalAlignment="Right"
+                  Spacing="8"
+                  Margin="0,16,0,0">
+        <Button Content="Cancel"
+                Command="{Binding CancelCommand}"/>
+        <Button Content="Save"
+                Command="{Binding SaveCommand}"/>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</Window>

@@ -63,12 +63,26 @@
     </Design.DataContext>
 
     <Grid RowDefinitions="Auto,*,Auto" RowSpacing="12" Margin="16">
-        <TextBlock Grid.Row="0"
-                   FontSize="20"
-                   FontWeight="SemiBold"
-                   Foreground="{DynamicResource MessageForegroundBrush}"
-                   Text="Foundry-9 AI Conversation"
-                   HorizontalAlignment="Left"/>
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Orientation="Vertical" Spacing="2">
+                <TextBlock FontSize="20"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource MessageForegroundBrush}"
+                           Text="Foundry-9 AI Conversation"
+                           HorizontalAlignment="Left"/>
+                <TextBlock FontSize="12"
+                           Foreground="{DynamicResource AuthorForegroundBrush}"
+                           Text="{Binding CurrentProvider}"/>
+                <TextBlock FontSize="12"
+                           Foreground="{DynamicResource AuthorForegroundBrush}"
+                           Text="{Binding CurrentModel}"/>
+            </StackPanel>
+            <Button Grid.Column="1"
+                    Content="Settings"
+                    HorizontalAlignment="Right"
+                    Padding="12,6"
+                    Click="SettingsButton_OnClick"/>
+        </Grid>
 
         <Border Grid.Row="1"
                 Background="{DynamicResource ConversationPanelBackgroundBrush}"

@@ -1,5 +1,6 @@
 using System;
 using System.Net.Http;
+using ChatClient.Models;
 
 namespace ChatClient.Services;
 
@@ -19,6 +20,21 @@ public static class LlmClientFactory
             LlmProvider.Anthropic => CreateAnthropicClient(),
             LlmProvider.OpenRouter => CreateOpenRouterClient(),
             _ => CreateOpenAiClient(),
+        };
+    }
+
+    public static LlmClientRegistration CreateFromSettings(AppSettings settings)
+    {
+        if (settings is null)
+        {
+            throw new ArgumentNullException(nameof(settings));
+        }
+
+        return settings.Provider switch
+        {
+            LlmProvider.Anthropic => CreateAnthropicClient(settings.Anthropic),
+            LlmProvider.OpenRouter => CreateOpenRouterClient(settings.OpenRouter),
+            _ => CreateOpenAiClient(settings.OpenAi),
         };
     }
 
@@ -74,6 +90,48 @@ public static class LlmClientFactory
         return new LlmClientRegistration(client, "OpenRouter", model, $"Connected to OpenRouter ({model}).");
     }
 
+    private static LlmClientRegistration CreateOpenAiClient(ProviderSettings settings)
+    {
+        if (settings is null)
+        {
+            throw new ArgumentNullException(nameof(settings));
+        }
+
+        var apiKey = RequireValue(settings.ApiKey, "OpenAI API key");
+        var model = string.IsNullOrWhiteSpace(settings.Model) ? "gpt-4o-mini" : settings.Model.Trim();
+        var httpClient = CreateHttpClient(DefaultOpenAiBase);
+        var client = new OpenAiLlmClient(httpClient, apiKey, model, httpClient.BaseAddress);
+        return new LlmClientRegistration(client, "OpenAI", model, $"Connected to OpenAI ({model}).");
+    }
+
+    private static LlmClientRegistration CreateAnthropicClient(ProviderSettings settings)
+    {
+        if (settings is null)
+        {
+            throw new ArgumentNullException(nameof(settings));
+        }
+
+        var apiKey = RequireValue(settings.ApiKey, "Anthropic API key");
+        var model = string.IsNullOrWhiteSpace(settings.Model) ? "claude-3-haiku-20240307" : settings.Model.Trim();
+        var httpClient = CreateHttpClient(DefaultAnthropicBase);
+        var client = new AnthropicLlmClient(httpClient, apiKey, model, httpClient.BaseAddress, 1024);
+        return new LlmClientRegistration(client, "Anthropic", model, $"Connected to Anthropic ({model}).");
+    }
+
+    private static LlmClientRegistration CreateOpenRouterClient(ProviderSettings settings)
+    {
+        if (settings is null)
+        {
+            throw new ArgumentNullException(nameof(settings));
+        }
+
+        var apiKey = RequireValue(settings.ApiKey, "OpenRouter API key");
+        var model = string.IsNullOrWhiteSpace(settings.Model) ? "openrouter/auto" : settings.Model.Trim();
+        var httpClient = CreateHttpClient(DefaultOpenRouterBase);
+        var client = new OpenRouterLlmClient(httpClient, apiKey, model, httpClient.BaseAddress, null, null);
+        return new LlmClientRegistration(client, "OpenRouter", model, $"Connected to OpenRouter ({model}).");
+    }
+
     private static HttpClient CreateHttpClient(string baseUrl)
     {
         if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
@@ -116,5 +174,15 @@ public static class LlmClientFactory
         }
 
         throw new InvalidOperationException($"Environment variable '{name}' must be a valid integer.");
+    }
+
+    private static string RequireValue(string value, string description)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException($"{description} must be configured.");
+        }
+
+        return value.Trim();
     }
 }
