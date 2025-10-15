@@ -16,14 +16,16 @@
 
 ## Milestone 3: LLM Service Integration
 - **Status:** Completed
-- Added an `ILlmClient` abstraction plus provider-specific clients for OpenAI, Anthropic, and OpenRouter driven by environment variables.
-- Implemented a factory that selects the provider via `LLM_PROVIDER`, defaulting to OpenAI, and validates required keys/models.
-- Updated the view-model to send prompts asynchronously, append assistant replies, and surface errors as system messages while keeping the UI responsive.
+- Added an `ILlmClient` abstraction plus provider-specific clients for OpenAI, Anthropic, and OpenRouter.
+- Implemented a factory that constructs clients from persisted app settings, providing consistent defaults and validation.
+- Introduced a persisted settings JSON file, a dedicated settings service, and a runtime settings window to manage provider, API keys, and models.
+- Added a model catalog service that queries each provider for available models so the user can select one interactively.
+- Updated the chat view-model to send prompts asynchronously, append assistant replies, and surface errors as system messages while keeping the UI responsive.
 - Added automatic system status messages announcing the active LLM provider/model whenever the app starts or the provider changes.
-- Ensured all secrets are supplied externally (environment variables) so nothing sensitive is hard-coded.
 
-## Milestone 4: Responsive and Stateful Experience
-- **Status:** Pending
+## Milestone 4: Responsive and Stateful Experience and Projects
+- **Status:** In Progress
+- Added a frameless startup splash screen with animated gear and live status log while services initialize.
 - Add richer feedback (typing indicator, disabled inputs, retry affordances) while awaiting LLM responses.
 - Serialize and persist the `Messages` collection (JSON via `System.Text.Json`) to provide session continuity.
 - Reload prior chats at startup, with sensible limits on stored history to manage disk usage.

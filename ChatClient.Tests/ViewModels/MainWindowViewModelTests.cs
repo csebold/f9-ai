@@ -23,7 +23,8 @@ public class MainWindowViewModelTests
 
         var status = viewModel.Messages[1];
         Assert.Equal("System", status.Author);
-        Assert.Equal("Connected to TestProvider.", status.Content);
+        Assert.Contains("Using project 'Default Project'.", status.Content);
+        Assert.Contains("Connected to TestProvider.", status.Content);
     }
 
     [Fact]
@@ -115,20 +116,24 @@ public class MainWindowViewModelTests
     }
 
     [Fact]
-    public void ChangeProvider_AppendsStatusMessage()
+    public void ChangeProject_AppendsStatusMessage()
     {
         var viewModel = new MainWindowViewModel(CreateRegistration(new StubLlmClient("First"), "ProviderA", "model-a"));
         var initialCount = viewModel.Messages.Count;
 
         var newRegistration = CreateRegistration(new StubLlmClient("Second"), "ProviderB", "model-b", "Connected to ProviderB (model-b).");
-        viewModel.ChangeProvider(newRegistration);
+        viewModel.ChangeProject(newRegistration, "Project B", "Follow the rules.", hasCustomProject: true);
 
         Assert.Equal(initialCount + 1, viewModel.Messages.Count);
         var statusMessage = viewModel.Messages[^1];
         Assert.Equal("System", statusMessage.Author);
-        Assert.Contains("ProviderB", statusMessage.Content);
+        Assert.Contains("Project B", statusMessage.Content);
+        Assert.Contains("Project instructions are active.", statusMessage.Content);
+        Assert.Contains("Connected to ProviderB (model-b).", statusMessage.Content);
         Assert.Equal("ProviderB", viewModel.CurrentProvider);
         Assert.Equal("model-b", viewModel.CurrentModel);
+        Assert.Equal("Project B", viewModel.CurrentProjectName);
+        Assert.True(viewModel.HasCustomProject);
     }
 
     private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout)

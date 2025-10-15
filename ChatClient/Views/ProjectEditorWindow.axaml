@@ -1,0 +1,65 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:ChatClient.ViewModels"
+        mc:Ignorable="d"
+        x:Class="ChatClient.Views.ProjectEditorWindow"
+        x:DataType="vm:ProjectEditorViewModel"
+        Width="500"
+        Height="600"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        Title="{Binding Title}">
+  <ScrollViewer>
+    <StackPanel Margin="16" Spacing="12">
+      <TextBlock Text="Project Name" FontWeight="Bold"/>
+      <TextBox Text="{Binding Name}"
+               Watermark="My Project"/>
+
+      <TextBlock Text="Instructions" FontWeight="Bold"/>
+      <TextBox Text="{Binding Instructions}"
+               AcceptsReturn="True"
+               TextWrapping="Wrap"
+               MinHeight="120"
+               Watermark="Optional guidance for this project..."/>
+
+      <TextBlock Text="Provider" FontWeight="Bold"/>
+      <ComboBox ItemsSource="{Binding Providers}"
+                SelectedItem="{Binding SelectedProviderOption}">
+        <ComboBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:ProjectEditorViewModel+ProjectProviderOption">
+            <TextBlock Text="{Binding DisplayName}"/>
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+
+      <TextBlock Text="API Key Override"/>
+      <TextBox Text="{Binding ApiKey}"
+               Watermark="Optional - inherits default when blank"/>
+
+      <TextBlock Text="Model Override"/>
+      <TextBox Text="{Binding Model}"
+               Watermark="Optional - inherits default when blank"/>
+
+      <TextBlock Text="Workspace Folder" FontWeight="Bold"/>
+      <TextBox Text="{Binding WorkspacePath}"
+               IsReadOnly="True"/>
+
+      <TextBlock Text="Overrides are optional. Leave fields blank to use the default settings."
+                 Foreground="Gray"
+                 TextWrapping="Wrap"
+                 FontSize="12"/>
+
+      <StackPanel Orientation="Horizontal"
+                  HorizontalAlignment="Right"
+                  Spacing="8"
+                  Margin="0,16,0,0">
+        <Button Content="Cancel"
+                Command="{Binding CancelCommand}"/>
+        <Button Content="Save"
+                Command="{Binding SaveCommand}"/>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</Window>

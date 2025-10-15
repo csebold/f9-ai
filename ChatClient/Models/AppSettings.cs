@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using ChatClient.Services;
 
 namespace ChatClient.Models;
@@ -11,6 +12,10 @@ public sealed class AppSettings
     public ProviderSettings Anthropic { get; set; } = new();
 
     public ProviderSettings OpenRouter { get; set; } = new();
+
+    public string? ActiveProjectId { get; set; }
+
+    public List<ProjectSettings> Projects { get; set; } = new();
 
     public ProviderSettings GetProviderSettings(LlmProvider provider) =>
         provider switch

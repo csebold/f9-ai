@@ -23,18 +23,24 @@ public static class LlmClientFactory
         };
     }
 
-    public static LlmClientRegistration CreateFromSettings(AppSettings settings)
+    public static LlmClientRegistration CreateFromSettings(AppSettings settings) =>
+        CreateForProject(settings, project: null);
+
+    public static LlmClientRegistration CreateForProject(AppSettings settings, ProjectSettings? project)
     {
         if (settings is null)
         {
             throw new ArgumentNullException(nameof(settings));
         }
 
-        return settings.Provider switch
+        var provider = project?.Provider ?? settings.Provider;
+        var providerSettings = ResolveProviderSettings(settings, project, provider);
+
+        return provider switch
         {
-            LlmProvider.Anthropic => CreateAnthropicClient(settings.Anthropic),
-            LlmProvider.OpenRouter => CreateOpenRouterClient(settings.OpenRouter),
-            _ => CreateOpenAiClient(settings.OpenAi),
+            LlmProvider.Anthropic => CreateAnthropicClient(providerSettings),
+            LlmProvider.OpenRouter => CreateOpenRouterClient(providerSettings),
+            _ => CreateOpenAiClient(providerSettings),
         };
     }
 
@@ -184,5 +190,31 @@ public static class LlmClientFactory
         }
 
         return value.Trim();
+    }
+
+    private static ProviderSettings ResolveProviderSettings(AppSettings settings, ProjectSettings? project, LlmProvider provider)
+    {
+        var baseSettings = settings.GetProviderSettings(provider);
+        var apiKey = baseSettings.ApiKey;
+        var model = baseSettings.Model;
+
+        if (project is not null && (project.Provider is null || project.Provider == provider))
+        {
+            if (!string.IsNullOrWhiteSpace(project.ApiKey))
+            {
+                apiKey = project.ApiKey.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(project.Model))
+            {
+                model = project.Model.Trim();
+            }
+        }
+
+        return new ProviderSettings
+        {
+            ApiKey = apiKey,
+            Model = model
+        };
     }
 }

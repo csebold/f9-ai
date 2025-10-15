@@ -11,6 +11,8 @@ namespace ChatClient.ViewModels;
 
 public partial class MainWindowViewModel : ViewModelBase
 {
+    private const string DefaultProjectName = "Default Project";
+
     private ILlmClient _llmClient = null!;
     private LlmClientRegistration _registration = null!;
 
@@ -24,20 +26,32 @@ public partial class MainWindowViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(SendCommand))]
     private bool _isBusy;
 
-    public MainWindowViewModel(LlmClientRegistration? registration = null)
+    [ObservableProperty]
+    private string _currentProjectName = DefaultProjectName;
+
+    [ObservableProperty]
+    private string _currentInstructions = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasCustomProject;
+
+    public MainWindowViewModel(LlmClientRegistration? registration = null, string? projectName = null, string? projectInstructions = null, bool hasCustomProject = false)
     {
         SendCommand = new AsyncRelayCommand(SendAsync, CanSendPrompt);
 
         AddMessage("System", "Welcome to Foundry-9 AI.", MessageRole.System);
 
+        var name = string.IsNullOrWhiteSpace(projectName) ? DefaultProjectName : projectName.Trim();
+        var instructions = projectInstructions?.Trim() ?? string.Empty;
+
         if (registration is null)
         {
             var fallbackRegistration = CreateFallbackRegistration("LLM provider not configured. Set LLM_PROVIDER and provider-specific API keys.");
-            ApplyRegistration(fallbackRegistration);
+            ApplyContext(fallbackRegistration, name, instructions, hasCustomProject, isUpdate: false, emitStatusMessage: false);
         }
         else
         {
-            ApplyRegistration(registration);
+            ApplyContext(registration, name, instructions, hasCustomProject, isUpdate: false, emitStatusMessage: true);
         }
     }
 
@@ -47,10 +61,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public string CurrentModel => _registration.ModelId;
 
-    public void ChangeProvider(LlmClientRegistration registration)
-    {
-        ApplyRegistration(registration, isUpdate: true);
-    }
+    public void ChangeProject(LlmClientRegistration registration, string projectName, string instructions, bool hasCustomProject, bool isUpdate = true) =>
+        ApplyContext(registration, projectName, instructions, hasCustomProject, isUpdate, emitStatusMessage: true);
 
     private LlmClientRegistration CreateFallbackRegistration(string message)
     {
@@ -89,24 +101,36 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private void ApplyRegistration(LlmClientRegistration registration, bool isUpdate = false)
+    private void ApplyContext(LlmClientRegistration registration, string projectName, string instructions, bool hasCustomProject, bool isUpdate, bool emitStatusMessage)
     {
         _registration = registration ?? throw new ArgumentNullException(nameof(registration));
         _llmClient = registration.Client;
 
-        var status = registration.StatusDetail;
-        if (string.IsNullOrWhiteSpace(status))
+        CurrentProjectName = string.IsNullOrWhiteSpace(projectName)
+            ? DefaultProjectName
+            : projectName.Trim();
+        CurrentInstructions = instructions?.Trim() ?? string.Empty;
+        HasCustomProject = hasCustomProject;
+
+        if (!emitStatusMessage)
         {
-            status = isUpdate
-                ? $"Switched to {registration.ProviderDisplayName} ({registration.ModelId})."
-                : $"Using {registration.ProviderDisplayName} ({registration.ModelId}).";
-        }
-        else if (isUpdate)
-        {
-            status = $"Switched LLM provider: {status}";
+            return;
         }
 
-        AddMessage("System", status, MessageRole.System);
+        var statusDetail = registration.StatusDetail;
+        if (string.IsNullOrWhiteSpace(statusDetail))
+        {
+            statusDetail = $"Using {registration.ProviderDisplayName} ({registration.ModelId}).";
+        }
+
+        var action = isUpdate ? "Switched to" : "Using";
+        var message = $"{action} project '{CurrentProjectName}'. {statusDetail}";
+        if (!string.IsNullOrWhiteSpace(CurrentInstructions))
+        {
+            message += $"{Environment.NewLine}Project instructions are active.";
+        }
+
+        AddMessage("System", message, MessageRole.System);
     }
 
     private void AddMessage(string author, string content, MessageRole role)

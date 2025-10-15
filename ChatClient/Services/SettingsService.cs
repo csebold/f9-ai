@@ -19,7 +19,7 @@ public sealed class SettingsService : ISettingsService
     public SettingsService(string? settingsPath = null)
     {
         _settingsPath = string.IsNullOrWhiteSpace(settingsPath)
-            ? GetDefaultSettingsPath()
+            ? AppPaths.GetSettingsPath()
             : settingsPath!;
     }
 
@@ -52,16 +52,4 @@ public sealed class SettingsService : ISettingsService
         await JsonSerializer.SerializeAsync(stream, settings, SerializerOptions, cancellationToken);
     }
 
-    private static string GetDefaultSettingsPath()
-    {
-        var directory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        if (string.IsNullOrWhiteSpace(directory))
-        {
-            directory = AppContext.BaseDirectory;
-        }
-
-        var settingsDirectory = Path.Combine(directory, "Foundry9", "ChatClient");
-        Directory.CreateDirectory(settingsDirectory);
-        return Path.Combine(settingsDirectory, "settings.json");
-    }
 }

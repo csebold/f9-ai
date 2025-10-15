@@ -66,19 +66,6 @@ public partial class App : Application
         }
     }
 
-    private static LlmClientRegistration CreateLlmRegistration(AppSettings settings)
-    {
-        try
-        {
-            return LlmClientFactory.CreateFromSettings(settings);
-        }
-        catch (Exception ex)
-        {
-            var detail = $"LLM configuration error: {ex.Message}";
-            return new LlmClientRegistration(new FallbackLlmClient(detail), "Unavailable", "N/A", detail);
-        }
-    }
-
     private async Task InitializeApplicationAsync(IClassicDesktopStyleApplicationLifetime desktop, SplashWindow splashWindow, SplashScreenViewModel splashViewModel)
     {
         void PostStatus(string message) =>
@@ -89,18 +76,34 @@ public partial class App : Application
             PostStatus("Loading user settings...");
             _settings = await _settingsService.LoadAsync().ConfigureAwait(false);
 
-            var providerName = _settings.Provider.ToString();
+            var settingsUpdated = false;
+            foreach (var project in _settings.Projects)
+            {
+                var previousPath = project.WorkspacePath;
+                ProjectWorkspace.EnsureWorkspace(project);
+                if (!string.Equals(previousPath, project.WorkspacePath, StringComparison.Ordinal))
+                {
+                    settingsUpdated = true;
+                }
+            }
+
+            var activeProject = ResolveActiveProject(_settings, ref settingsUpdated);
+            var providerForStatus = activeProject?.Provider ?? _settings.Provider;
+            var providerName = providerForStatus.ToString();
             PostStatus($"Configuring provider: {providerName}...");
 
-            var registration = CreateLlmRegistration(_settings);
+            if (settingsUpdated)
+            {
+                await _settingsService.SaveAsync(_settings).ConfigureAwait(false);
+            }
 
             PostStatus("Checking MCP integrations (coming soon)...");
             PostStatus("Finalizing UI...");
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                var mainWindowViewModel = new MainWindowViewModel(registration);
-                var mainWindow = new MainWindow(_settingsService, _modelCatalogService, _settings)
+                var mainWindowViewModel = new MainWindowViewModel();
+                var mainWindow = new MainWindow(_settingsService, _modelCatalogService, _settings, activeProject)
                 {
                     DataContext = mainWindowViewModel
                 };
@@ -131,5 +134,23 @@ public partial class App : Application
         {
             disposable.Dispose();
         }
+    }
+
+    private static ProjectSettings? ResolveActiveProject(AppSettings settings, ref bool settingsUpdated)
+    {
+        ProjectSettings? activeProject = null;
+        if (!string.IsNullOrWhiteSpace(settings.ActiveProjectId))
+        {
+            activeProject = settings.Projects.FirstOrDefault(p => string.Equals(p.Id, settings.ActiveProjectId, StringComparison.Ordinal));
+        }
+
+        if (activeProject is null && settings.Projects.Count > 0)
+        {
+            activeProject = settings.Projects[0];
+            settings.ActiveProjectId = activeProject.Id;
+            settingsUpdated = true;
+        }
+
+        return activeProject;
     }
 }

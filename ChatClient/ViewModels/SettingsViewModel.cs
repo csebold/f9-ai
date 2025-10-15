@@ -241,7 +241,25 @@ public partial class SettingsViewModel : ObservableObject
             {
                 ApiKey = source.OpenRouter.ApiKey,
                 Model = source.OpenRouter.Model
-            }
+            },
+            ActiveProjectId = source.ActiveProjectId,
+            Projects = source.Projects.Select(CloneProject).ToList()
+        };
+    }
+
+    private static ProjectSettings CloneProject(ProjectSettings source)
+    {
+        return new ProjectSettings
+        {
+            Id = source.Id,
+            Name = source.Name,
+            Instructions = source.Instructions,
+            WorkspacePath = source.WorkspacePath,
+            Provider = source.Provider,
+            ApiKey = source.ApiKey,
+            Model = source.Model,
+            ThemeId = source.ThemeId,
+            FontFamily = source.FontFamily
         };
     }
 

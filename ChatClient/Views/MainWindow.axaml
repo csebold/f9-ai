@@ -53,6 +53,7 @@
             <conv:MessageRoleToThicknessConverter x:Key="MessageRoleToMarginConverter"/>
             <conv:MessageRoleToFontStyleConverter x:Key="MessageRoleToFontStyleConverter"/>
             <conv:MessageRoleToTextAlignmentConverter x:Key="MessageRoleToTextAlignmentConverter"/>
+            <conv:StringNotEmptyToBoolConverter x:Key="StringNotEmptyToBoolConverter"/>
         </ResourceDictionary>
     </Window.Resources>
 
@@ -62,29 +63,49 @@
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-    <Grid RowDefinitions="Auto,*,Auto" RowSpacing="12" Margin="16">
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+    <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12" Margin="16">
+        <Menu Grid.Row="0">
+            <MenuItem Header="Projects" x:Name="ProjectsMenuRoot"/>
+        </Menu>
+
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
             <StackPanel Orientation="Vertical" Spacing="2">
                 <TextBlock FontSize="20"
                            FontWeight="SemiBold"
                            Foreground="{DynamicResource MessageForegroundBrush}"
                            Text="Foundry-9 AI Conversation"
                            HorizontalAlignment="Left"/>
+                <TextBlock FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource AuthorForegroundBrush}"
+                           Text="{Binding CurrentProjectName}"/>
                 <TextBlock FontSize="12"
                            Foreground="{DynamicResource AuthorForegroundBrush}"
                            Text="{Binding CurrentProvider}"/>
                 <TextBlock FontSize="12"
                            Foreground="{DynamicResource AuthorForegroundBrush}"
                            Text="{Binding CurrentModel}"/>
+                <TextBlock FontSize="12"
+                           Foreground="{DynamicResource AuthorForegroundBrush}"
+                           TextWrapping="Wrap"
+                           MaxHeight="80"
+                           IsVisible="{Binding CurrentInstructions, Converter={StaticResource StringNotEmptyToBoolConverter}}"
+                           Text="{Binding CurrentInstructions}"/>
             </StackPanel>
             <Button Grid.Column="1"
+                    Content="Project Settings"
+                    HorizontalAlignment="Right"
+                    Padding="12,6"
+                    IsEnabled="{Binding HasCustomProject}"
+                    Click="ProjectSettingsButton_OnClick"/>
+            <Button Grid.Column="2"
                     Content="Settings"
                     HorizontalAlignment="Right"
                     Padding="12,6"
                     Click="SettingsButton_OnClick"/>
         </Grid>
 
-        <Border Grid.Row="1"
+        <Border Grid.Row="2"
                 Background="{DynamicResource ConversationPanelBackgroundBrush}"
                 CornerRadius="6"
                 Padding="12">
@@ -122,7 +143,7 @@
             </ScrollViewer>
         </Border>
 
-        <Border Grid.Row="2"
+        <Border Grid.Row="3"
                 Background="{DynamicResource ComposerBackgroundBrush}"
                 CornerRadius="6"
                 Padding="12 12 12 16">
