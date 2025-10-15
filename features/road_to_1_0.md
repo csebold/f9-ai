@@ -25,11 +25,40 @@
 
 ## Milestone 4: Responsive and Stateful Experience and Projects
 - **Status:** In Progress
-- Added a frameless startup splash screen with animated gear and live status log while services initialize.
-- Add richer feedback (typing indicator, disabled inputs, retry affordances) while awaiting LLM responses.
-- Serialize and persist the `Messages` collection (JSON via `System.Text.Json`) to provide session continuity.
-- Reload prior chats at startup, with sensible limits on stored history to manage disk usage.
-- Implement auto-scroll and timestamps formatting to keep the experience polished across providers.
+
+### Goals
+- Deliver a polished startup and session bootstrapping flow (frameless splash, live status log).
+- Provide responsive feedback while the assistant is thinking (typing indicator, disabled inputs, retry).
+- Persist chat state on disk and restore it safely across launches.
+- Keep long-running sessions usable (auto-scroll, timestamp formatting, cross-platform polish).
+
+### Task Breakdown
+1. **Startup Experience**
+   - Finalize the frameless splash screen animation and service status log wiring.
+   - Gate main window launch on initialization completion with timeout and cancel affordances.
+   - Add unit coverage for the initialization sequence to protect against regression.
+2. **Conversation Responsiveness**
+   - Expose an `IsResponding` flag from the view-model and bind it to typing indicator visuals.
+   - Disable send/input controls while requests are in-flight and surface a retry command on failure.
+   - Surface provider latency and error summaries in the status bar for quick debugging.
+3. **Session Persistence**
+   - Serialize the `ObservableCollection<Message>` to JSON via `System.Text.Json` with versioning.
+   - Restore the most recent sessions at startup and trim history to configurable limits.
+   - Extend settings UI/service to toggle persistence and purge stored chats, with integration tests.
+4. **Conversation Polish**
+   - Implement auto-scroll that respects user scroll-up pauses and resumes on new messages.
+   - Normalize timestamp display (local time, relative formatting for recent messages).
+   - Audit visual states across dark/light themes and OS density settings.
+
+### Dependencies & Risks
+- Leverages Milestone 3 settings service hooks; confirm it supports new persistence toggles.
+- Disk I/O for persistence must run off the UI thread with cancellation to avoid UI freezes.
+- Retry logic needs mockable LLM client paths to keep tests fast and deterministic.
+
+### Definition of Done
+- Task breakdown items implemented with accompanying unit/integration coverage where feasible.
+- Manual QA checklist executed on macOS and Windows.
+- Release notes updated summarizing startup, responsiveness, and persistence improvements.
 
 ## Milestone 5: Cross-Platform Packaging and Delivery
 - **Status:** Pending
