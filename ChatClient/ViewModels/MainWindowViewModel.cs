@@ -11,7 +11,8 @@ namespace ChatClient.ViewModels;
 
 public partial class MainWindowViewModel : ViewModelBase
 {
-    private readonly ILlmClient _llmClient;
+    private ILlmClient _llmClient = null!;
+    private LlmClientRegistration _registration = null!;
 
     public ObservableCollection<Message> Messages { get; } = new();
 
@@ -23,16 +24,38 @@ public partial class MainWindowViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(SendCommand))]
     private bool _isBusy;
 
-    public MainWindowViewModel(ILlmClient? llmClient = null)
+    public MainWindowViewModel(LlmClientRegistration? registration = null)
     {
-        _llmClient = llmClient ?? new FallbackLlmClient("LLM provider not configured. Set LLM_PROVIDER and provider-specific API keys.");
-
-        Messages.Add(new Message("System", "Welcome to Avalonia!", DateTimeOffset.Now, false));
-
         SendCommand = new AsyncRelayCommand(SendAsync, CanSendPrompt);
+
+        AddMessage("System", "Welcome to Foundry-9 AI.", MessageRole.System);
+
+        if (registration is null)
+        {
+            var fallbackRegistration = CreateFallbackRegistration("LLM provider not configured. Set LLM_PROVIDER and provider-specific API keys.");
+            ApplyRegistration(fallbackRegistration);
+        }
+        else
+        {
+            ApplyRegistration(registration);
+        }
     }
 
     public IAsyncRelayCommand SendCommand { get; }
+
+    public string CurrentProvider => _registration.ProviderDisplayName;
+
+    public string CurrentModel => _registration.ModelId;
+
+    public void ChangeProvider(LlmClientRegistration registration)
+    {
+        ApplyRegistration(registration, isUpdate: true);
+    }
+
+    private LlmClientRegistration CreateFallbackRegistration(string message)
+    {
+        return new LlmClientRegistration(new FallbackLlmClient(message), "Unavailable", "N/A", message);
+    }
 
     private bool CanSendPrompt() => !IsBusy && !string.IsNullOrWhiteSpace(Prompt);
 
@@ -44,7 +67,7 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        AddMessage("You", trimmed, isUser: true);
+        AddMessage("You", trimmed, MessageRole.User);
         Prompt = string.Empty;
 
         try
@@ -53,12 +76,12 @@ public partial class MainWindowViewModel : ViewModelBase
             var response = await _llmClient.GetResponseAsync(trimmed, CancellationToken.None);
             if (!string.IsNullOrWhiteSpace(response))
             {
-                AddMessage("Assistant", response.Trim(), isUser: false);
+                AddMessage("Assistant", response.Trim(), MessageRole.Assistant);
             }
         }
         catch (Exception ex)
         {
-            AddMessage("System", $"Error contacting LLM: {ex.Message}", isUser: false);
+            AddMessage("System", $"Error contacting LLM: {ex.Message}", MessageRole.System);
         }
         finally
         {
@@ -66,8 +89,28 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private void AddMessage(string author, string content, bool isUser)
+    private void ApplyRegistration(LlmClientRegistration registration, bool isUpdate = false)
     {
-        Messages.Add(new Message(author, content, DateTimeOffset.Now, isUser));
+        _registration = registration ?? throw new ArgumentNullException(nameof(registration));
+        _llmClient = registration.Client;
+
+        var status = registration.StatusDetail;
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            status = isUpdate
+                ? $"Switched to {registration.ProviderDisplayName} ({registration.ModelId})."
+                : $"Using {registration.ProviderDisplayName} ({registration.ModelId}).";
+        }
+        else if (isUpdate)
+        {
+            status = $"Switched LLM provider: {status}";
+        }
+
+        AddMessage("System", status, MessageRole.System);
+    }
+
+    private void AddMessage(string author, string content, MessageRole role)
+    {
+        Messages.Add(new Message(author, content, DateTimeOffset.Now, role));
     }
 }

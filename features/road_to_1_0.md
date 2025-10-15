@@ -19,6 +19,7 @@
 - Added an `ILlmClient` abstraction plus provider-specific clients for OpenAI, Anthropic, and OpenRouter driven by environment variables.
 - Implemented a factory that selects the provider via `LLM_PROVIDER`, defaulting to OpenAI, and validates required keys/models.
 - Updated the view-model to send prompts asynchronously, append assistant replies, and surface errors as system messages while keeping the UI responsive.
+- Added automatic system status messages announcing the active LLM provider/model whenever the app starts or the provider changes.
 - Ensured all secrets are supplied externally (environment variables) so nothing sensitive is hard-coded.
 
 ## Milestone 4: Responsive and Stateful Experience

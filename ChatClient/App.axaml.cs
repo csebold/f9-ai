@@ -1,5 +1,5 @@
-using Avalonia;
 using System;
+using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Data.Core;
 using Avalonia.Data.Core.Plugins;
@@ -26,11 +26,11 @@ public partial class App : Application
             // More info: https://docs.avaloniaui.net/docs/guides/development-guides/data-validation#manage-validationplugins
             DisableAvaloniaDataAnnotationValidation();
 
-            var llmClient = CreateLlmClient();
+            var registration = CreateLlmRegistration();
 
             desktop.MainWindow = new MainWindow
             {
-                DataContext = new MainWindowViewModel(llmClient),
+                DataContext = new MainWindowViewModel(registration),
             };
         }
 
@@ -50,7 +50,7 @@ public partial class App : Application
         }
     }
 
-    private static ILlmClient CreateLlmClient()
+    private static LlmClientRegistration CreateLlmRegistration()
     {
         try
         {
@@ -58,7 +58,8 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            return new FallbackLlmClient($"LLM configuration error: {ex.Message}");
+            var detail = $"LLM configuration error: {ex.Message}";
+            return new LlmClientRegistration(new FallbackLlmClient(detail), "Unavailable", "N/A", detail);
         }
     }
 }

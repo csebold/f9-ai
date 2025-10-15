@@ -10,22 +10,26 @@ namespace ChatClient.Tests.ViewModels;
 public class MainWindowViewModelTests
 {
     [Fact]
-    public void Constructor_SeedsWelcomeMessage()
+    public void Constructor_AddsWelcomeAndProviderMessages()
     {
-        var viewModel = new MainWindowViewModel(new StubLlmClient("Hello from stub"));
+        var registration = CreateRegistration(new StubLlmClient("Hello"), "TestProvider", "model-a", "Connected to TestProvider.");
+        var viewModel = new MainWindowViewModel(registration);
 
-        Assert.Single(viewModel.Messages);
-        var message = viewModel.Messages[0];
-        Assert.Equal("System", message.Author);
-        Assert.Equal("Welcome to Avalonia!", message.Content);
-        Assert.False(message.IsUser);
-        Assert.True((DateTimeOffset.Now - message.Timestamp) < TimeSpan.FromSeconds(5));
+        Assert.Equal(2, viewModel.Messages.Count);
+
+        var welcome = viewModel.Messages[0];
+        Assert.Equal("System", welcome.Author);
+        Assert.Equal("Welcome to Foundry-9 AI.", welcome.Content);
+
+        var status = viewModel.Messages[1];
+        Assert.Equal("System", status.Author);
+        Assert.Equal("Connected to TestProvider.", status.Content);
     }
 
     [Fact]
     public void Constructor_StartsWithEmptyPrompt()
     {
-        var viewModel = new MainWindowViewModel(new StubLlmClient("Hello"));
+        var viewModel = new MainWindowViewModel(CreateRegistration(new StubLlmClient("Hello")));
 
         Assert.Equal(string.Empty, viewModel.Prompt);
     }
@@ -33,7 +37,7 @@ public class MainWindowViewModelTests
     [Fact]
     public void SendCommand_CannotExecute_WhenPromptIsEmptyOrWhitespace()
     {
-        var viewModel = new MainWindowViewModel(new StubLlmClient("Hello"));
+        var viewModel = new MainWindowViewModel(CreateRegistration(new StubLlmClient("Hello")));
 
         Assert.False(viewModel.SendCommand.CanExecute(null));
 
@@ -45,20 +49,20 @@ public class MainWindowViewModelTests
     [Fact]
     public async Task SendCommand_AddsTrimmedUserAndAssistantMessages()
     {
-        var viewModel = new MainWindowViewModel(new StubLlmClient("Assistant reply"));
+        var viewModel = new MainWindowViewModel(CreateRegistration(new StubLlmClient("Assistant reply")));
         viewModel.Prompt = "  Hello Avalonia  ";
 
         await viewModel.SendCommand.ExecuteAsync(null);
 
         Assert.Equal(string.Empty, viewModel.Prompt);
 
-        Assert.Equal(3, viewModel.Messages.Count);
-        var userMessage = viewModel.Messages[1];
+        Assert.Equal(4, viewModel.Messages.Count);
+        var userMessage = viewModel.Messages[2];
         Assert.Equal("You", userMessage.Author);
         Assert.Equal("Hello Avalonia", userMessage.Content);
         Assert.True(userMessage.IsUser);
 
-        var assistantMessage = viewModel.Messages[2];
+        var assistantMessage = viewModel.Messages[3];
         Assert.Equal("Assistant", assistantMessage.Author);
         Assert.Equal("Assistant reply", assistantMessage.Content);
         Assert.False(assistantMessage.IsUser);
@@ -67,24 +71,24 @@ public class MainWindowViewModelTests
     [Fact]
     public async Task SendCommand_IgnoresExecution_WhenPromptIsEmptyAfterTrim()
     {
-        var viewModel = new MainWindowViewModel(new StubLlmClient("Hello"));
+        var viewModel = new MainWindowViewModel(CreateRegistration(new StubLlmClient("Hello")));
         viewModel.Prompt = "\t";
 
         await viewModel.SendCommand.ExecuteAsync(null);
 
-        Assert.Single(viewModel.Messages); // still only the welcome message
+        Assert.Equal(2, viewModel.Messages.Count);
     }
 
     [Fact]
     public async Task SendCommand_AppendsSystemMessage_WhenServiceThrows()
     {
-        var viewModel = new MainWindowViewModel(new StubLlmClient(new InvalidOperationException("Boom")));
+        var viewModel = new MainWindowViewModel(CreateRegistration(new StubLlmClient(new InvalidOperationException("Boom"))));
         viewModel.Prompt = "Hi";
 
         await viewModel.SendCommand.ExecuteAsync(null);
 
-        Assert.Equal(3, viewModel.Messages.Count);
-        var systemMessage = viewModel.Messages[2];
+        Assert.Equal(4, viewModel.Messages.Count);
+        var systemMessage = viewModel.Messages[3];
         Assert.Equal("System", systemMessage.Author);
         Assert.Contains("Boom", systemMessage.Content);
         Assert.False(systemMessage.IsUser);
@@ -94,7 +98,7 @@ public class MainWindowViewModelTests
     public async Task SendCommand_DisablesWhileInFlight()
     {
         var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var viewModel = new MainWindowViewModel(new AsyncStubLlmClient(() => tcs.Task));
+        var viewModel = new MainWindowViewModel(CreateRegistration(new AsyncStubLlmClient(() => tcs.Task)));
         viewModel.Prompt = "Hello";
 
         var executionTask = viewModel.SendCommand.ExecuteAsync(null);
@@ -108,6 +112,23 @@ public class MainWindowViewModelTests
 
         Assert.False(viewModel.SendCommand.CanExecute(null));
         Assert.False(viewModel.IsBusy);
+    }
+
+    [Fact]
+    public void ChangeProvider_AppendsStatusMessage()
+    {
+        var viewModel = new MainWindowViewModel(CreateRegistration(new StubLlmClient("First"), "ProviderA", "model-a"));
+        var initialCount = viewModel.Messages.Count;
+
+        var newRegistration = CreateRegistration(new StubLlmClient("Second"), "ProviderB", "model-b", "Connected to ProviderB (model-b).");
+        viewModel.ChangeProvider(newRegistration);
+
+        Assert.Equal(initialCount + 1, viewModel.Messages.Count);
+        var statusMessage = viewModel.Messages[^1];
+        Assert.Equal("System", statusMessage.Author);
+        Assert.Contains("ProviderB", statusMessage.Content);
+        Assert.Equal("ProviderB", viewModel.CurrentProvider);
+        Assert.Equal("model-b", viewModel.CurrentModel);
     }
 
     private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout)
@@ -124,6 +145,9 @@ public class MainWindowViewModelTests
             await Task.Delay(5);
         }
     }
+
+    private static LlmClientRegistration CreateRegistration(ILlmClient client, string provider = "TestProvider", string model = "test-model", string? statusDetail = null)
+        => new(client, provider, model, statusDetail);
 
     private sealed class StubLlmClient : ILlmClient
     {

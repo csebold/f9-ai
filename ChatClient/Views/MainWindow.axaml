@@ -9,10 +9,51 @@
         x:DataType="vm:MainWindowViewModel"
         xmlns:conv="using:ChatClient.Converters"
         Icon="/Assets/avalonia-logo.ico"
-        Title="ChatClient">
+        Title="Foundry-9 AI">
 
     <Window.Resources>
-        <conv:HalfValueConverter x:Key="HalfValueConverter"/>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="ConversationPanelBackgroundBrush" Color="#FFF5F6F8"/>
+                    <SolidColorBrush x:Key="ComposerBackgroundBrush" Color="#FFFFFFFF"/>
+                    <SolidColorBrush x:Key="AssistantMessageBackgroundBrush" Color="#FFFFFFFF"/>
+                    <SolidColorBrush x:Key="UserMessageBackgroundBrush" Color="#FFE1F0FF"/>
+                    <SolidColorBrush x:Key="SystemMessageBackgroundBrush" Color="#FFF0F2F5"/>
+                    <SolidColorBrush x:Key="MessageForegroundBrush" Color="#FF1F1F1F"/>
+                    <SolidColorBrush x:Key="AuthorForegroundBrush" Color="#FF4A4A4A"/>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="ConversationPanelBackgroundBrush" Color="#FF1E1E1E"/>
+                    <SolidColorBrush x:Key="ComposerBackgroundBrush" Color="#FF262626"/>
+                    <SolidColorBrush x:Key="AssistantMessageBackgroundBrush" Color="#FF2B2B2B"/>
+                    <SolidColorBrush x:Key="UserMessageBackgroundBrush" Color="#FF0F3D63"/>
+                    <SolidColorBrush x:Key="SystemMessageBackgroundBrush" Color="#FF212833"/>
+                    <SolidColorBrush x:Key="MessageForegroundBrush" Color="#FFECECEC"/>
+                    <SolidColorBrush x:Key="AuthorForegroundBrush" Color="#FFB4C5FF"/>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Default">
+                    <SolidColorBrush x:Key="ConversationPanelBackgroundBrush" Color="#FF2B2B2B"/>
+                    <SolidColorBrush x:Key="ComposerBackgroundBrush" Color="#FF2F2F2F"/>
+                    <SolidColorBrush x:Key="AssistantMessageBackgroundBrush" Color="#FF2F2F2F"/>
+                    <SolidColorBrush x:Key="UserMessageBackgroundBrush" Color="#FF0F3D63"/>
+                    <SolidColorBrush x:Key="SystemMessageBackgroundBrush" Color="#FF21313F"/>
+                    <SolidColorBrush x:Key="MessageForegroundBrush" Color="#FFECECEC"/>
+                    <SolidColorBrush x:Key="AuthorForegroundBrush" Color="#FFB4C5FF"/>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
+            <conv:HalfValueConverter x:Key="HalfValueConverter"/>
+            <conv:FractionValueConverter x:Key="TwoThirdsWidthConverter" Factor="0.66"/>
+            <conv:MessageRoleToBrushConverter x:Key="MessageRoleToBrushConverter"
+                                              UserBrush="{StaticResource UserMessageBackgroundBrush}"
+                                              AssistantBrush="{StaticResource AssistantMessageBackgroundBrush}"
+                                              SystemBrush="{StaticResource SystemMessageBackgroundBrush}"/>
+            <conv:MessageRoleToHorizontalAlignmentConverter x:Key="MessageRoleToHorizontalAlignmentConverter"/>
+            <conv:MessageRoleToThicknessConverter x:Key="MessageRoleToMarginConverter"/>
+            <conv:MessageRoleToFontStyleConverter x:Key="MessageRoleToFontStyleConverter"/>
+            <conv:MessageRoleToTextAlignmentConverter x:Key="MessageRoleToTextAlignmentConverter"/>
+        </ResourceDictionary>
     </Window.Resources>
 
     <Design.DataContext>
@@ -25,30 +66,41 @@
         <TextBlock Grid.Row="0"
                    FontSize="20"
                    FontWeight="SemiBold"
-                   Text="ChatClient Conversation"
+                   Foreground="{DynamicResource MessageForegroundBrush}"
+                   Text="Foundry-9 AI Conversation"
                    HorizontalAlignment="Left"/>
 
         <Border Grid.Row="1"
-                Background="#0A000000"
+                Background="{DynamicResource ConversationPanelBackgroundBrush}"
                 CornerRadius="6"
                 Padding="12">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <ItemsControl ItemsSource="{Binding Messages}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="model:Message">
-                            <Border Margin="0 0 0 12"
+                            <Border Margin="{Binding Role, Converter={StaticResource MessageRoleToMarginConverter}}"
                                     Padding="8"
                                     CornerRadius="6"
-                                    Background="#FFFFFFFF">
-                                <StackPanel>
-                                    <TextBlock Text="{Binding Author}"
-                                               FontSize="13"
-                                               FontWeight="Bold"
-                                               Foreground="#AA000000"/>
-                                    <TextBlock Text="{Binding Content}"
-                                               TextWrapping="Wrap"
-                                               Margin="0 4 0 0"/>
-                                </StackPanel>
+                                    Background="{Binding Role, Converter={StaticResource MessageRoleToBrushConverter}}"
+                                    HorizontalAlignment="{Binding Role, Converter={StaticResource MessageRoleToHorizontalAlignmentConverter}}"
+                                    MaxWidth="{Binding Bounds.Width, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource TwoThirdsWidthConverter}}">
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                              VerticalScrollBarVisibility="Disabled"
+                                              MaxWidth="{Binding Bounds.Width, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource TwoThirdsWidthConverter}}">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="{Binding Author}"
+                                                   FontSize="13"
+                                                   FontWeight="Bold"
+                                                   FontStyle="{Binding Role, Converter={StaticResource MessageRoleToFontStyleConverter}}"
+                                                   Foreground="{DynamicResource AuthorForegroundBrush}"
+                                                   TextAlignment="{Binding Role, Converter={StaticResource MessageRoleToTextAlignmentConverter}}"/>
+                                        <TextBlock Text="{Binding Content}"
+                                                   TextWrapping="Wrap"
+                                                   FontStyle="{Binding Role, Converter={StaticResource MessageRoleToFontStyleConverter}}"
+                                                   Foreground="{DynamicResource MessageForegroundBrush}"
+                                                   TextAlignment="{Binding Role, Converter={StaticResource MessageRoleToTextAlignmentConverter}}"/>
+                                    </StackPanel>
+                                </ScrollViewer>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
@@ -57,7 +109,7 @@
         </Border>
 
         <Border Grid.Row="2"
-                Background="#0F000000"
+                Background="{DynamicResource ComposerBackgroundBrush}"
                 CornerRadius="6"
                 Padding="12 12 12 16">
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">

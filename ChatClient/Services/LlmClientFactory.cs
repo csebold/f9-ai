@@ -9,7 +9,7 @@ public static class LlmClientFactory
     private const string DefaultAnthropicBase = "https://api.anthropic.com/v1/";
     private const string DefaultOpenRouterBase = "https://openrouter.ai/api/v1/";
 
-    public static ILlmClient CreateDefault()
+    public static LlmClientRegistration CreateDefault()
     {
         var providerValue = Environment.GetEnvironmentVariable("LLM_PROVIDER");
         var provider = ParseProvider(providerValue);
@@ -38,17 +38,18 @@ public static class LlmClientFactory
         };
     }
 
-    private static ILlmClient CreateOpenAiClient()
+    private static LlmClientRegistration CreateOpenAiClient()
     {
         var apiKey = GetRequiredEnvironmentVariable("OPENAI_API_KEY");
         var model = GetOptionalEnvironmentVariable("OPENAI_MODEL") ?? "gpt-4o-mini";
         var baseUrl = GetOptionalEnvironmentVariable("OPENAI_BASE_URL") ?? DefaultOpenAiBase;
 
         var httpClient = CreateHttpClient(baseUrl);
-        return new OpenAiLlmClient(httpClient, apiKey, model, httpClient.BaseAddress);
+        var client = new OpenAiLlmClient(httpClient, apiKey, model, httpClient.BaseAddress);
+        return new LlmClientRegistration(client, "OpenAI", model, $"Connected to OpenAI ({model}).");
     }
 
-    private static ILlmClient CreateAnthropicClient()
+    private static LlmClientRegistration CreateAnthropicClient()
     {
         var apiKey = GetRequiredEnvironmentVariable("ANTHROPIC_API_KEY");
         var model = GetOptionalEnvironmentVariable("ANTHROPIC_MODEL") ?? "claude-3-haiku-20240307";
@@ -56,10 +57,11 @@ public static class LlmClientFactory
         var baseUrl = GetOptionalEnvironmentVariable("ANTHROPIC_BASE_URL") ?? DefaultAnthropicBase;
 
         var httpClient = CreateHttpClient(baseUrl);
-        return new AnthropicLlmClient(httpClient, apiKey, model, httpClient.BaseAddress, maxTokens);
+        var client = new AnthropicLlmClient(httpClient, apiKey, model, httpClient.BaseAddress, maxTokens);
+        return new LlmClientRegistration(client, "Anthropic", model, $"Connected to Anthropic ({model}).");
     }
 
-    private static ILlmClient CreateOpenRouterClient()
+    private static LlmClientRegistration CreateOpenRouterClient()
     {
         var apiKey = GetRequiredEnvironmentVariable("OPENROUTER_API_KEY");
         var model = GetOptionalEnvironmentVariable("OPENROUTER_MODEL") ?? "openrouter/auto";
@@ -68,7 +70,8 @@ public static class LlmClientFactory
         var title = GetOptionalEnvironmentVariable("OPENROUTER_APP_TITLE");
 
         var httpClient = CreateHttpClient(baseUrl);
-        return new OpenRouterLlmClient(httpClient, apiKey, model, httpClient.BaseAddress, referer, title);
+        var client = new OpenRouterLlmClient(httpClient, apiKey, model, httpClient.BaseAddress, referer, title);
+        return new LlmClientRegistration(client, "OpenRouter", model, $"Connected to OpenRouter ({model}).");
     }
 
     private static HttpClient CreateHttpClient(string baseUrl)
