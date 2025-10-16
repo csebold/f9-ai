@@ -54,6 +54,7 @@
             <conv:MessageRoleToFontStyleConverter x:Key="MessageRoleToFontStyleConverter"/>
             <conv:MessageRoleToTextAlignmentConverter x:Key="MessageRoleToTextAlignmentConverter"/>
             <conv:StringNotEmptyToBoolConverter x:Key="StringNotEmptyToBoolConverter"/>
+            <conv:BooleanNegationConverter x:Key="BooleanNegationConverter"/>
         </ResourceDictionary>
     </Window.Resources>
 
@@ -63,7 +64,7 @@
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-    <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12" Margin="16">
+    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="12" Margin="16">
         <Menu Grid.Row="0">
             <MenuItem Header="Projects" x:Name="ProjectsMenuRoot"/>
         </Menu>
@@ -147,19 +148,71 @@
                 Background="{DynamicResource ComposerBackgroundBrush}"
                 CornerRadius="6"
                 Padding="12 12 12 16">
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                <TextBox Grid.Column="0"
+            <Grid ColumnDefinitions="*,Auto"
+                  RowDefinitions="Auto,Auto"
+                  ColumnSpacing="12"
+                  RowSpacing="8">
+                <StackPanel Grid.Row="0"
+                            Grid.ColumnSpan="2"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            VerticalAlignment="Center"
+                            IsVisible="{Binding IsResponding}">
+                    <ProgressBar Width="80"
+                                 Height="6"
+                                 IsIndeterminate="True"
+                                 VerticalAlignment="Center"/>
+                    <TextBlock Text="Assistant is thinking..."
+                               Foreground="{DynamicResource AuthorForegroundBrush}"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+
+                <TextBox Grid.Row="1"
+                         Grid.Column="0"
                          Text="{Binding Prompt, UpdateSourceTrigger=PropertyChanged}"
                          TextWrapping="Wrap"
                          AcceptsReturn="True"
                          MinLines="3"
+                         IsEnabled="{Binding IsResponding, Converter={StaticResource BooleanNegationConverter}}"
                          ScrollViewer.VerticalScrollBarVisibility="Auto"
                          Watermark="Type your message..."
                          MaxHeight="{Binding Bounds.Height, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource HalfValueConverter}}"/>
+
+                <Grid Grid.Row="1"
+                      Grid.Column="1"
+                      HorizontalAlignment="Right">
+                    <Button Content="Send"
+                            Padding="20 12"
+                            Command="{Binding SendCommand}"
+                            IsVisible="{Binding IsResponding, Converter={StaticResource BooleanNegationConverter}}"/>
+                    <Button Content="Stop"
+                            Padding="20 12"
+                            Command="{Binding StopCommand}"
+                            IsVisible="{Binding IsResponding}"/>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="4"
+                Background="{DynamicResource ComposerBackgroundBrush}"
+                CornerRadius="6"
+                Padding="8 6 12 8">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                <StackPanel Orientation="Vertical" Spacing="2">
+                    <TextBlock Text="{Binding StatusMessage}"
+                               Foreground="{DynamicResource AuthorForegroundBrush}"
+                               TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding ErrorSummary}"
+                               Foreground="#FFD95B5B"
+                               FontStyle="Italic"
+                               TextWrapping="Wrap"
+                               IsVisible="{Binding ErrorSummary, Converter={StaticResource StringNotEmptyToBoolConverter}}"/>
+                </StackPanel>
                 <Button Grid.Column="1"
-                        Content="Send"
-                        Padding="20 12"
-                        Command="{Binding SendCommand}"/>
+                        Content="Retry"
+                        Padding="16 8"
+                        Command="{Binding RetryCommand}"
+                        IsVisible="{Binding CanRetry}"/>
             </Grid>
         </Border>
     </Grid>

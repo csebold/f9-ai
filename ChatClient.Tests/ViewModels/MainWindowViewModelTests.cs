@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using ChatClient.Services;
@@ -25,6 +26,7 @@ public class MainWindowViewModelTests
         Assert.Equal("System", status.Author);
         Assert.Contains("Using project 'Default Project'.", status.Content);
         Assert.Contains("Connected to TestProvider.", status.Content);
+        Assert.Equal("Ready - TestProvider (model-a)", viewModel.StatusMessage);
     }
 
     [Fact]
@@ -45,6 +47,15 @@ public class MainWindowViewModelTests
         viewModel.Prompt = "   ";
 
         Assert.False(viewModel.SendCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void RetryCommand_CannotExecute_WhenNoPreviousPrompt()
+    {
+        var viewModel = new MainWindowViewModel(CreateRegistration(new StubLlmClient("Hello")));
+
+        Assert.False(viewModel.CanRetry);
+        Assert.False(viewModel.RetryCommand.CanExecute(null));
     }
 
     [Fact]
@@ -93,26 +104,118 @@ public class MainWindowViewModelTests
         Assert.Equal("System", systemMessage.Author);
         Assert.Contains("Boom", systemMessage.Content);
         Assert.False(systemMessage.IsUser);
+        Assert.True(viewModel.CanRetry);
+        Assert.True(viewModel.RetryCommand.CanExecute(null));
+        Assert.Contains("Failed after", viewModel.StatusMessage);
+        Assert.Contains("Boom", viewModel.ErrorSummary);
     }
 
     [Fact]
     public async Task SendCommand_DisablesWhileInFlight()
     {
         var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var viewModel = new MainWindowViewModel(CreateRegistration(new AsyncStubLlmClient(() => tcs.Task)));
+        var viewModel = new MainWindowViewModel(CreateRegistration(new AsyncStubLlmClient(_ => tcs.Task)));
         viewModel.Prompt = "Hello";
 
         var executionTask = viewModel.SendCommand.ExecuteAsync(null);
 
-        await WaitForAsync(() => viewModel.IsBusy, TimeSpan.FromMilliseconds(200));
+        await WaitForAsync(() => viewModel.IsResponding, TimeSpan.FromMilliseconds(200));
 
         Assert.False(viewModel.SendCommand.CanExecute(null));
+        Assert.True(viewModel.StopCommand.CanExecute(null));
+        Assert.StartsWith("Requesting response", viewModel.StatusMessage, StringComparison.Ordinal);
 
         tcs.SetResult("Done");
         await executionTask;
 
         Assert.False(viewModel.SendCommand.CanExecute(null));
-        Assert.False(viewModel.IsBusy);
+        Assert.False(viewModel.IsResponding);
+        Assert.False(viewModel.StopCommand.CanExecute(null));
+        Assert.Contains("Responded in", viewModel.StatusMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StopCommand_CancelsInFlightRequest()
+    {
+        var cancellationObserved = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var viewModel = new MainWindowViewModel(CreateRegistration(new AsyncStubLlmClient(ct =>
+        {
+            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            ct.Register(() =>
+            {
+                cancellationObserved.TrySetResult(true);
+                tcs.TrySetCanceled(ct);
+            });
+            return tcs.Task;
+        })));
+
+        viewModel.Prompt = "Hello";
+
+        var executionTask = viewModel.SendCommand.ExecuteAsync(null);
+
+        await WaitForAsync(() => viewModel.IsResponding, TimeSpan.FromMilliseconds(200));
+        Assert.True(viewModel.StopCommand.CanExecute(null));
+
+        viewModel.StopCommand.Execute(null);
+
+        await executionTask;
+        await WaitForAsync(() => !viewModel.IsResponding, TimeSpan.FromMilliseconds(200));
+
+        Assert.Equal("Request canceled.", viewModel.StatusMessage);
+        Assert.False(viewModel.CanRetry);
+        Assert.Null(viewModel.ErrorSummary);
+
+        await WaitForAsync(() => cancellationObserved.Task.IsCompleted, TimeSpan.FromMilliseconds(200));
+    }
+
+    [Fact]
+    public async Task StopCommand_NoopsWhenNotInFlight()
+    {
+        var viewModel = new MainWindowViewModel(CreateRegistration(new StubLlmClient("Hi")));
+
+        Assert.False(viewModel.StopCommand.CanExecute(null));
+
+        viewModel.StopCommand.Execute(null);
+
+        viewModel.Prompt = "Test";
+        await viewModel.SendCommand.ExecuteAsync(null);
+
+        Assert.False(viewModel.IsResponding);
+        Assert.Contains("Responded in", viewModel.StatusMessage);
+    }
+
+    [Fact]
+    public async Task RetryCommand_ReplaysPromptWithoutDuplicatingUserMessage()
+    {
+        var callCount = 0;
+        var viewModel = new MainWindowViewModel(CreateRegistration(new AsyncStubLlmClient(_ =>
+        {
+            callCount++;
+            if (callCount == 1)
+            {
+                return Task.FromException<string>(new InvalidOperationException("Intermittent failure"));
+            }
+
+            return Task.FromResult("Recovered");
+        })));
+
+        viewModel.Prompt = "Check connectivity";
+
+        await viewModel.SendCommand.ExecuteAsync(null);
+
+        Assert.True(viewModel.CanRetry);
+        Assert.True(viewModel.RetryCommand.CanExecute(null));
+        Assert.Contains("Failed after", viewModel.StatusMessage);
+        Assert.Contains("Intermittent failure", viewModel.ErrorSummary);
+
+        await viewModel.RetryCommand.ExecuteAsync(null);
+
+        Assert.False(viewModel.CanRetry);
+        Assert.False(viewModel.RetryCommand.CanExecute(null));
+        Assert.Contains("Responded in", viewModel.StatusMessage);
+        Assert.Null(viewModel.ErrorSummary);
+        Assert.Equal(1, viewModel.Messages.Count(message => message.IsUser));
+        Assert.Equal(1, viewModel.Messages.Count(message => message.IsAssistant));
     }
 
     [Fact]
@@ -134,6 +237,7 @@ public class MainWindowViewModelTests
         Assert.Equal("model-b", viewModel.CurrentModel);
         Assert.Equal("Project B", viewModel.CurrentProjectName);
         Assert.True(viewModel.HasCustomProject);
+        Assert.Equal("Ready - ProviderB (model-b)", viewModel.StatusMessage);
     }
 
     private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout)
@@ -182,16 +286,16 @@ public class MainWindowViewModelTests
 
     private sealed class AsyncStubLlmClient : ILlmClient
     {
-        private readonly Func<Task<string>> _taskFactory;
+        private readonly Func<CancellationToken, Task<string>> _taskFactory;
 
-        public AsyncStubLlmClient(Func<Task<string>> taskFactory)
+        public AsyncStubLlmClient(Func<CancellationToken, Task<string>> taskFactory)
         {
             _taskFactory = taskFactory;
         }
 
         public Task<string> GetResponseAsync(string prompt, CancellationToken cancellationToken = default)
         {
-            return _taskFactory();
+            return _taskFactory(cancellationToken);
         }
     }
 }

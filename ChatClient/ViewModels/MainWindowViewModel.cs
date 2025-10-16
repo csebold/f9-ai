@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using ChatClient.Models;
@@ -24,7 +25,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SendCommand))]
-    private bool _isBusy;
+    [NotifyCanExecuteChangedFor(nameof(StopCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RetryCommand))]
+    private bool _isResponding;
 
     [ObservableProperty]
     private string _currentProjectName = DefaultProjectName;
@@ -35,9 +38,24 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _hasCustomProject;
 
+    [ObservableProperty]
+    private string _statusMessage = "Ready.";
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RetryCommand))]
+    private bool _canRetry;
+
+    [ObservableProperty]
+    private string? _errorSummary;
+
+    private CancellationTokenSource? _responseCancellation;
+    private string? _lastPrompt;
+
     public MainWindowViewModel(LlmClientRegistration? registration = null, string? projectName = null, string? projectInstructions = null, bool hasCustomProject = false)
     {
         SendCommand = new AsyncRelayCommand(SendAsync, CanSendPrompt);
+        StopCommand = new RelayCommand(StopRequest, CanStopRequest);
+        RetryCommand = new AsyncRelayCommand(RetryAsync, CanRetryRequest);
 
         AddMessage("System", "Welcome to Foundry-9 AI.", MessageRole.System);
 
@@ -57,6 +75,10 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public IAsyncRelayCommand SendCommand { get; }
 
+    public IRelayCommand StopCommand { get; }
+
+    public IAsyncRelayCommand RetryCommand { get; }
+
     public string CurrentProvider => _registration.ProviderDisplayName;
 
     public string CurrentModel => _registration.ModelId;
@@ -69,7 +91,11 @@ public partial class MainWindowViewModel : ViewModelBase
         return new LlmClientRegistration(new FallbackLlmClient(message), "Unavailable", "N/A", message);
     }
 
-    private bool CanSendPrompt() => !IsBusy && !string.IsNullOrWhiteSpace(Prompt);
+    private bool CanSendPrompt() => !IsResponding && !string.IsNullOrWhiteSpace(Prompt);
+
+    private bool CanStopRequest() => IsResponding;
+
+    private bool CanRetryRequest() => CanRetry && !IsResponding;
 
     private async Task SendAsync()
     {
@@ -79,26 +105,96 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        AddMessage("You", trimmed, MessageRole.User);
         Prompt = string.Empty;
+
+        await SendCoreAsync(trimmed, appendUserMessage: true);
+    }
+
+    private async Task RetryAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_lastPrompt))
+        {
+            return;
+        }
+
+        await SendCoreAsync(_lastPrompt, appendUserMessage: false);
+    }
+
+    private async Task SendCoreAsync(string prompt, bool appendUserMessage)
+    {
+        _lastPrompt = prompt;
+        ErrorSummary = null;
+        CanRetry = false;
+
+        if (appendUserMessage)
+        {
+            AddMessage("You", prompt, MessageRole.User);
+        }
+
+        var cancellation = new CancellationTokenSource();
+        _responseCancellation = cancellation;
+        var stopwatch = Stopwatch.StartNew();
 
         try
         {
-            IsBusy = true;
-            var response = await _llmClient.GetResponseAsync(trimmed, CancellationToken.None);
+            IsResponding = true;
+            StatusMessage = $"Requesting response from {CurrentProvider} ({CurrentModel})...";
+
+            var response = await _llmClient.GetResponseAsync(prompt, cancellation.Token);
+
+            stopwatch.Stop();
+
             if (!string.IsNullOrWhiteSpace(response))
             {
                 AddMessage("Assistant", response.Trim(), MessageRole.Assistant);
             }
+
+            StatusMessage = $"Responded in {FormatLatency(stopwatch.Elapsed)} via {CurrentProvider} ({CurrentModel}).";
+        }
+        catch (OperationCanceledException)
+        {
+            stopwatch.Stop();
+            StatusMessage = "Request canceled.";
         }
         catch (Exception ex)
         {
+            stopwatch.Stop();
+            StatusMessage = $"Failed after {FormatLatency(stopwatch.Elapsed)} contacting {CurrentProvider} ({CurrentModel}).";
+            ErrorSummary = ex.Message;
+            CanRetry = true;
             AddMessage("System", $"Error contacting LLM: {ex.Message}", MessageRole.System);
         }
         finally
         {
-            IsBusy = false;
+            cancellation.Dispose();
+            if (ReferenceEquals(_responseCancellation, cancellation))
+            {
+                _responseCancellation = null;
+            }
+
+            IsResponding = false;
         }
+    }
+
+    private void StopRequest()
+    {
+        if (!IsResponding)
+        {
+            return;
+        }
+
+        _responseCancellation?.Cancel();
+        StatusMessage = $"Canceling request to {CurrentProvider}...";
+    }
+
+    private static string FormatLatency(TimeSpan duration)
+    {
+        if (duration.TotalMilliseconds < 1000)
+        {
+            return $"{duration.TotalMilliseconds:F0} ms";
+        }
+
+        return $"{duration.TotalSeconds:F1} s";
     }
 
     private void ApplyContext(LlmClientRegistration registration, string projectName, string instructions, bool hasCustomProject, bool isUpdate, bool emitStatusMessage)
@@ -111,6 +207,8 @@ public partial class MainWindowViewModel : ViewModelBase
             : projectName.Trim();
         CurrentInstructions = instructions?.Trim() ?? string.Empty;
         HasCustomProject = hasCustomProject;
+
+        StatusMessage = $"Ready - {registration.ProviderDisplayName} ({registration.ModelId})";
 
         if (!emitStatusMessage)
         {
