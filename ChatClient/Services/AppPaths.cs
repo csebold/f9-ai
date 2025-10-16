@@ -24,6 +24,12 @@ public static class AppPaths
         return Path.Combine(baseDirectory, "settings.json");
     }
 
+    public static string GetSessionStorePath()
+    {
+        var baseDirectory = GetBaseDirectory();
+        return Path.Combine(baseDirectory, "sessions.json");
+    }
+
     public static string GetProjectsRoot()
     {
         var baseDirectory = GetBaseDirectory();

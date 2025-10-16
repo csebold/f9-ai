@@ -34,17 +34,26 @@
 
 ### Task Breakdown
 1. **Startup Experience**
+   - **Status:** Completed
    - Finalize the frameless splash screen animation and service status log wiring.
    - Gate main window launch on initialization completion with timeout and cancel affordances.
    - Add unit coverage for the initialization sequence to protect against regression.
 2. **Conversation Responsiveness**
+   - **Status:** Completed
    - Expose an `IsResponding` flag from the view-model and bind it to typing indicator visuals.
    - Disable send/input controls while requests are in-flight and surface a retry command on failure.
    - Replace the "send" button with a "stop" button while requests are in-flight and put "send" back when the request is complete.
    - Surface provider latency and error summaries in the status bar for quick debugging.
 3. **Session Persistence**
+   - **Status:** Completed
    - Serialize the `ObservableCollection<Message>` to JSON via `System.Text.Json` with versioning.
+   - Store an array of those "ObservableCollection<Message>" objects and link an array of chat sessions to each project.
    - Restore the most recent sessions at startup and trim history to configurable limits.
+   - Create a UI on a scrollable left sidebar for two things: "Projects" at the top, and "Chat Sessions" at the bottom.
+     - The "Projects" part contains a scrollable list of projects, and a button to create a new project. With this, we can remove the in-window "Project" menu.
+     - Selecting a different project should update the "Chat Settings" list shown at the bottom to match the array of chat sessions tied to this project.
+     - The app's settings should persist the last project we had selected when we last quit the application. If that project no longer exists, we should go back to the "Default Project." At this time this is not configurable in the Settings UI.
+     - At the top of the Chat Settings for the selected project, there should be a button for "+ New Chat" to start a new chat session in this project.
    - Extend settings UI/service to toggle persistence and purge stored chats, with integration tests.
 4. **Conversation Polish**
    - Implement auto-scroll that respects user scroll-up pauses and resumes on new messages.

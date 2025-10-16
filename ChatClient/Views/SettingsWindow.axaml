@@ -55,6 +55,45 @@
                    IsVisible="{Binding IsBusy}"
                    Height="4"/>
 
+      <Separator/>
+
+      <StackPanel Spacing="12">
+        <TextBlock Text="Session Persistence"
+                   FontWeight="Bold"/>
+        <CheckBox Content="Enable session persistence"
+                  IsChecked="{Binding EnableSessionPersistence}"/>
+        <Grid ColumnDefinitions="*,Auto"
+              RowDefinitions="Auto,Auto"
+              ColumnSpacing="12"
+              RowSpacing="8">
+          <TextBlock Grid.Row="0"
+                     Grid.Column="0"
+                     Text="Max sessions per project"
+                     VerticalAlignment="Center"/>
+          <NumericUpDown Grid.Row="0"
+                         Grid.Column="1"
+                         Minimum="1"
+                         Maximum="100"
+                         FormatString="0"
+                         Width="120"
+                         Value="{Binding MaxSessionsPerProject}"/>
+          <TextBlock Grid.Row="1"
+                     Grid.Column="0"
+                     Text="Max messages per session"
+                     VerticalAlignment="Center"/>
+          <NumericUpDown Grid.Row="1"
+                         Grid.Column="1"
+                         Minimum="1"
+                         Maximum="5000"
+                         FormatString="0"
+                         Width="120"
+                         Value="{Binding MaxMessagesPerSession}"/>
+        </Grid>
+        <Button Content="Purge Stored Chats"
+                Command="{Binding PurgeChatsCommand}"
+                HorizontalAlignment="Left"/>
+      </StackPanel>
+
       <TextBlock Text="{Binding StatusMessage}"
                  Foreground="Gray"
                  TextWrapping="Wrap"/>

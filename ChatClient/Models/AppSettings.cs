@@ -17,6 +17,14 @@ public sealed class AppSettings
 
     public List<ProjectSettings> Projects { get; set; } = new();
 
+    public bool EnableSessionPersistence { get; set; } = true;
+
+    public int MaxSessionsPerProject { get; set; } = 10;
+
+    public int MaxMessagesPerSession { get; set; } = 200;
+
+    public Dictionary<string, string> ActiveSessions { get; set; } = new();
+
     public ProviderSettings GetProviderSettings(LlmProvider provider) =>
         provider switch
         {

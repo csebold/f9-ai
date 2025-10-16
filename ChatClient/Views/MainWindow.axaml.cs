@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
-using Avalonia.Collections;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using ChatClient.Models;
@@ -13,38 +16,86 @@ namespace ChatClient.Views;
 public partial class MainWindow : Window
 {
     private const string DefaultProjectName = "Default Project";
+    private const string DefaultProjectKey = "default";
 
     private readonly ISettingsService _settingsService;
     private readonly IModelCatalogService _modelCatalogService;
-    private readonly MenuItem _projectsMenuRoot;
+    private readonly ISessionPersistenceService _sessionPersistenceService;
+    private readonly ObservableCollection<ProjectListItem> _projectItems = new();
+    private readonly ObservableCollection<ChatSessionListItem> _sessionItems = new();
+    private readonly Dictionary<string, ProjectSessionState> _sessionStates = new(StringComparer.Ordinal);
+    private readonly ListBox _projectsList;
+    private readonly ListBox _sessionsList;
+    private readonly SemaphoreSlim _sessionSaveLock = new(1, 1);
 
     private AppSettings _settings;
     private ProjectSettings? _activeProject;
+    private ChatSessionState? _activeSession;
+    private MainWindowViewModel? _viewModel;
+    private SessionStoreSnapshot _sessionSnapshot;
+    private bool _suppressProjectSelectionChanged;
+    private bool _suppressSessionSelectionChanged;
+    private bool _suppressMessageSync;
 
     public MainWindow()
-        : this(new SettingsService(), new ModelCatalogService(), new AppSettings(), activeProject: null)
+        : this(
+            new SettingsService(),
+            new ModelCatalogService(),
+            new SessionPersistenceService(),
+            new AppSettings(),
+            activeProject: null,
+            sessionSnapshot: new SessionStoreSnapshot())
     {
     }
 
-    public MainWindow(ISettingsService settingsService, IModelCatalogService modelCatalogService, AppSettings settings, ProjectSettings? activeProject)
+    public MainWindow(
+        ISettingsService settingsService,
+        IModelCatalogService modelCatalogService,
+        ISessionPersistenceService sessionPersistenceService,
+        AppSettings settings,
+        ProjectSettings? activeProject,
+        SessionStoreSnapshot? sessionSnapshot)
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _modelCatalogService = modelCatalogService ?? throw new ArgumentNullException(nameof(modelCatalogService));
+        _sessionPersistenceService = sessionPersistenceService ?? throw new ArgumentNullException(nameof(sessionPersistenceService));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _activeProject = activeProject;
+        _sessionSnapshot = sessionSnapshot ?? new SessionStoreSnapshot();
 
         InitializeComponent();
 
-        _projectsMenuRoot = this.FindControl<MenuItem>("ProjectsMenuRoot")
-                            ?? throw new InvalidOperationException("Projects menu root not found.");
+        _projectsList = this.FindControl<ListBox>("ProjectsList")
+                        ?? throw new InvalidOperationException("Projects list control not found.");
+        _sessionsList = this.FindControl<ListBox>("SessionsList")
+                        ?? throw new InvalidOperationException("Sessions list control not found.");
 
+        _projectsList.ItemsSource = _projectItems;
+        _sessionsList.ItemsSource = _sessionItems;
+
+        DataContextChanged += OnDataContextChanged;
         Opened += OnOpened;
     }
 
     public async Task InitializeAsync()
     {
-        RefreshProjectsMenu();
-        await ApplyProjectAsync(_activeProject, persist: false, isUpdate: false);
+        BuildSessionStates();
+        RefreshProjectList();
+        await ApplyProjectAsync(_activeProject, persist: false, isUpdate: false, emitStatusMessageOverride: false);
+    }
+
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        if (_viewModel is not null)
+        {
+            _viewModel.Messages.CollectionChanged -= OnMessagesCollectionChanged;
+        }
+
+        _viewModel = DataContext as MainWindowViewModel;
+        if (_viewModel is not null)
+        {
+            _viewModel.Messages.CollectionChanged += OnMessagesCollectionChanged;
+        }
     }
 
     private async void OnOpened(object? sender, EventArgs e)
@@ -55,8 +106,7 @@ public partial class MainWindow : Window
 
     private async void SettingsButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        var viewModel = DataContext as MainWindowViewModel;
-        if (viewModel is null)
+        if (_viewModel is null)
         {
             return;
         }
@@ -65,7 +115,7 @@ public partial class MainWindow : Window
 
         var dialog = new SettingsWindow
         {
-            DataContext = new SettingsViewModel(_settingsService, _modelCatalogService, _settings)
+            DataContext = new SettingsViewModel(_settingsService, _modelCatalogService, _settings, _sessionPersistenceService)
         };
 
         var result = await ShowSettingsDialogAsync(dialog);
@@ -79,8 +129,8 @@ public partial class MainWindow : Window
             ? null
             : _settings.Projects.FirstOrDefault(p => string.Equals(p.Id, previousActiveId, StringComparison.Ordinal));
 
-        RefreshProjectsMenu();
-        await ApplyProjectAsync(_activeProject, persist: false, isUpdate: true);
+        RefreshProjectList();
+        await ApplyProjectAsync(_activeProject, persist: false, isUpdate: true, emitStatusMessageOverride: true);
     }
 
     private async void ProjectSettingsButton_OnClick(object? sender, RoutedEventArgs e)
@@ -111,37 +161,11 @@ public partial class MainWindow : Window
         ProjectWorkspace.EnsureWorkspace(target);
 
         _activeProject = target;
-        await ApplyProjectAsync(_activeProject, persist: true, isUpdate: true);
+        RefreshProjectList();
+        await ApplyProjectAsync(_activeProject, persist: true, isUpdate: true, emitStatusMessageOverride: true);
     }
 
-    private async void ProjectMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not MenuItem menuItem)
-        {
-            return;
-        }
-
-        if (menuItem.CommandParameter is ProjectSettings project)
-        {
-            if (_activeProject?.Id == project.Id)
-            {
-                return;
-            }
-
-            await ApplyProjectAsync(project, persist: true, isUpdate: true);
-        }
-        else
-        {
-            if (_activeProject is null)
-            {
-                return;
-            }
-
-            await ApplyProjectAsync(project: null, persist: true, isUpdate: true);
-        }
-    }
-
-    private async void AddProjectMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    private async void AddProjectButton_OnClick(object? sender, RoutedEventArgs e)
     {
         var newProject = new ProjectSettings();
         var dialog = new ProjectEditorWindow
@@ -165,8 +189,70 @@ public partial class MainWindow : Window
         _settings.Projects.Add(result);
         _activeProject = result;
 
-        RefreshProjectsMenu();
-        await ApplyProjectAsync(_activeProject, persist: true, isUpdate: true);
+        RefreshProjectList();
+        await ApplyProjectAsync(_activeProject, persist: true, isUpdate: true, emitStatusMessageOverride: true);
+    }
+
+    private async void ProjectsList_OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressProjectSelectionChanged)
+        {
+            return;
+        }
+
+        if (_projectsList.SelectedItem is not ProjectListItem selectedItem)
+        {
+            return;
+        }
+
+        if (_activeProject is null && selectedItem.Project is null)
+        {
+            return;
+        }
+
+        if (_activeProject?.Id is not null &&
+            selectedItem.Project?.Id is not null &&
+            string.Equals(_activeProject.Id, selectedItem.Project.Id, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        await ApplyProjectAsync(selectedItem.Project, persist: true, isUpdate: true, emitStatusMessageOverride: true);
+    }
+
+    private async void SessionsList_OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressSessionSelectionChanged)
+        {
+            return;
+        }
+
+        if (_sessionsList.SelectedItem is not ChatSessionListItem item)
+        {
+            return;
+        }
+
+        if (_activeSession?.Id == item.Session.Id)
+        {
+            return;
+        }
+
+        var projectKey = GetProjectKey(_activeProject);
+        await ApplySessionAsync(projectKey, item.Session);
+        RefreshSessionsForProject(projectKey, item.Session.Id);
+    }
+
+    private async void NewChatButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var projectKey = GetProjectKey(_activeProject);
+        var projectState = EnsureProjectSession(projectKey);
+        var session = CreateNewSession(projectState);
+
+        projectState.ActiveSessionId = session.Id;
+        _settings.ActiveSessions[projectKey] = session.Id;
+
+        await ApplySessionAsync(projectKey, session);
+        RefreshSessionsForProject(projectKey, session.Id);
     }
 
     private async Task<AppSettings?> ShowSettingsDialogAsync(SettingsWindow dialog)
@@ -193,9 +279,9 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task ApplyProjectAsync(ProjectSettings? project, bool persist, bool isUpdate)
+    private async Task ApplyProjectAsync(ProjectSettings? project, bool persist, bool isUpdate, bool? emitStatusMessageOverride = null)
     {
-        if (DataContext is not MainWindowViewModel viewModel)
+        if (_viewModel is null)
         {
             return;
         }
@@ -217,15 +303,40 @@ public partial class MainWindow : Window
         }
 
         _activeProject = project;
-        _settings.ActiveProjectId = _activeProject?.Id;
+        var projectKey = GetProjectKey(project);
+        _settings.ActiveProjectId = project?.Id;
+
+        var projectState = EnsureProjectSession(projectKey);
+
+        _settings.ActiveSessions.TryGetValue(projectKey, out var persistedSessionId);
+        var activeSessionId = ResolveActiveSessionId(projectState, persistedSessionId);
+        var activeSession = projectState.Sessions.First(s => string.Equals(s.Id, activeSessionId, StringComparison.Ordinal));
+
+        projectState.ActiveSessionId = activeSession.Id;
+        _settings.ActiveSessions[projectKey] = activeSession.Id;
+
+        var emitStatusMessage = emitStatusMessageOverride ?? !activeSession.Messages.Any();
+        var shouldPersistSessions = persist || isUpdate || emitStatusMessage;
+
+        _activeSession = activeSession;
+        _suppressMessageSync = true;
+        _viewModel.ResetMessages(activeSession.Messages, includeWelcomeWhenEmpty: true);
+        SyncSessionWithViewModel();
+        _suppressMessageSync = false;
 
         var projectName = project?.Name ?? DefaultProjectName;
         var instructions = project?.Instructions ?? string.Empty;
         var hasCustomProject = project is not null;
 
-        viewModel.ChangeProject(registration, projectName, instructions, hasCustomProject, isUpdate);
+        _viewModel.ChangeProject(registration, projectName, instructions, hasCustomProject, isUpdate, emitStatusMessage);
 
-        RefreshProjectsMenu();
+        RefreshProjectList();
+        RefreshSessionsForProject(projectKey, activeSession.Id);
+
+        if (shouldPersistSessions)
+        {
+            await PersistSessionsAsync();
+        }
 
         if (persist)
         {
@@ -235,63 +346,330 @@ public partial class MainWindow : Window
             }
             catch
             {
-                // Intentionally ignored. User will attempt again if needed.
+                // Ignore persistence failures; user can retry later.
             }
         }
     }
 
-    private void RefreshProjectsMenu()
+    private Task ApplySessionAsync(string projectKey, ChatSessionState session)
     {
-        var items = new AvaloniaList<object>
+        if (_viewModel is null)
         {
-            CreateProjectMenuItem(project: null, isActive: _activeProject is null)
-        };
+            return Task.CompletedTask;
+        }
 
-        items.Add(new Separator());
+        _activeSession = session;
 
-        var orderedProjects = _settings.Projects
-            .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        _suppressMessageSync = true;
+        _viewModel.ResetMessages(session.Messages, includeWelcomeWhenEmpty: true);
+        SyncSessionWithViewModel();
+        _suppressMessageSync = false;
 
-        if (orderedProjects.Count > 0)
+        var state = EnsureProjectSession(projectKey);
+        state.ActiveSessionId = session.Id;
+        _settings.ActiveSessions[projectKey] = session.Id;
+
+        return PersistSessionsAsync();
+    }
+
+    private void BuildSessionStates()
+    {
+        _sessionStates.Clear();
+
+        foreach (var projectSnapshot in _sessionSnapshot.Projects)
         {
+            var projectKey = string.IsNullOrWhiteSpace(projectSnapshot.ProjectId)
+                ? DefaultProjectKey
+                : projectSnapshot.ProjectId;
+
+            var state = EnsureProjectSession(projectKey);
+            state.Sessions.Clear();
+
+            foreach (var sessionSnapshot in projectSnapshot.Sessions)
+            {
+                var session = new ChatSessionState(
+                    sessionSnapshot.Id,
+                    sessionSnapshot.Title,
+                    sessionSnapshot.CreatedAt,
+                    sessionSnapshot.UpdatedAt,
+                    sessionSnapshot.Messages);
+                UpdateSessionMetadata(session);
+                state.Sessions.Add(session);
+            }
+
+            if (state.Sessions.Count == 0)
+            {
+                CreateNewSession(state);
+            }
+
+            state.ActiveSessionId = ResolveActiveSessionId(state, projectSnapshot.ActiveSessionId);
+            _sessionStates[projectKey] = state;
+        }
+    }
+
+    private void RefreshProjectList()
+    {
+        var selectedKey = GetProjectKey(_activeProject);
+
+        _suppressProjectSelectionChanged = true;
+        try
+        {
+            _projectsList.SelectedIndex = -1;
+
+            _projectItems.Clear();
+            var defaultItem = new ProjectListItem(DefaultProjectKey, null, DefaultProjectName);
+            _projectItems.Add(defaultItem);
+
+            var orderedProjects = _settings.Projects
+                .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
             foreach (var project in orderedProjects)
             {
-                var isActive = _activeProject is not null && string.Equals(_activeProject.Id, project.Id, StringComparison.Ordinal);
-                items.Add(CreateProjectMenuItem(project, isActive));
+                var key = GetProjectKey(project);
+                var name = string.IsNullOrWhiteSpace(project.Name) ? DefaultProjectName : project.Name;
+                _projectItems.Add(new ProjectListItem(key, project, name));
             }
 
-            items.Add(new Separator());
+            var selected = _projectItems.FirstOrDefault(p => string.Equals(p.ProjectKey, selectedKey, StringComparison.Ordinal))
+                           ?? defaultItem;
+            _projectsList.SelectedItem = selected;
+        }
+        finally
+        {
+            _suppressProjectSelectionChanged = false;
+        }
+    }
+
+    private void RefreshSessionsForProject(string projectKey, string? activeSessionId)
+    {
+        var state = EnsureProjectSession(projectKey);
+
+        _suppressSessionSelectionChanged = true;
+        try
+        {
+            foreach (var session in state.Sessions)
+            {
+                UpdateSessionMetadata(session);
+            }
+
+            var orderedSessions = state.Sessions
+                .OrderByDescending(s => s.UpdatedAt)
+                .ToList();
+
+            _sessionsList.SelectedIndex = -1;
+            _sessionItems.Clear();
+
+            foreach (var session in orderedSessions)
+            {
+                _sessionItems.Add(new ChatSessionListItem(session));
+            }
+
+            if (orderedSessions.Count == 0)
+            {
+                return;
+            }
+
+            var targetId = activeSessionId
+                           ?? state.ActiveSessionId
+                           ?? orderedSessions.FirstOrDefault()?.Id;
+
+            if (!string.IsNullOrWhiteSpace(targetId))
+            {
+                state.ActiveSessionId = targetId;
+                _settings.ActiveSessions[projectKey] = targetId;
+            }
+
+            var selected = _sessionItems.FirstOrDefault(i => string.Equals(i.Session.Id, targetId, StringComparison.Ordinal))
+                          ?? _sessionItems.FirstOrDefault();
+            _sessionsList.SelectedItem = selected;
+        }
+        finally
+        {
+            _suppressSessionSelectionChanged = false;
+        }
+    }
+
+    private void OnMessagesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (_suppressMessageSync)
+        {
+            return;
         }
 
-        items.Add(CreateAddProjectMenuItem());
+        SyncSessionWithViewModel();
 
-        _projectsMenuRoot.ItemsSource = items;
+        if (_activeSession is not null)
+        {
+            var projectKey = GetProjectKey(_activeProject);
+            RefreshSessionsForProject(projectKey, _activeSession.Id);
+        }
+
+        _ = PersistSessionsAsync();
     }
 
-    private MenuItem CreateProjectMenuItem(ProjectSettings? project, bool isActive)
+    private void SyncSessionWithViewModel()
     {
-        var header = project?.Name ?? DefaultProjectName;
-        var item = new MenuItem
+        if (_activeSession is null || _viewModel is null)
         {
-            Header = header,
-            IsChecked = isActive,
-            ToggleType = MenuItemToggleType.CheckBox,
-            CommandParameter = project
-        };
+            return;
+        }
 
-        item.Click += ProjectMenuItem_OnClick;
-        return item;
+        _activeSession.Messages.Clear();
+        foreach (var message in _viewModel.Messages)
+        {
+            _activeSession.Messages.Add(message);
+        }
+
+        UpdateSessionMetadata(_activeSession);
+
+        var projectKey = GetProjectKey(_activeProject);
+        var state = EnsureProjectSession(projectKey);
+        if (!state.Sessions.Contains(_activeSession))
+        {
+            state.Sessions.Add(_activeSession);
+        }
+
+        state.ActiveSessionId = _activeSession.Id;
+        _settings.ActiveSessions[projectKey] = _activeSession.Id;
     }
 
-    private MenuItem CreateAddProjectMenuItem()
+    private async Task PersistSessionsAsync()
     {
-        var item = new MenuItem
+        if (!_settings.EnableSessionPersistence)
         {
-            Header = "Add Project..."
+            return;
+        }
+
+        await _sessionSaveLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var snapshot = BuildSnapshot();
+            SessionStatePruner.Trim(snapshot, _settings.MaxSessionsPerProject, _settings.MaxMessagesPerSession);
+            AlignStateWithSnapshot(snapshot);
+            _sessionSnapshot = snapshot;
+            await _sessionPersistenceService.SaveAsync(snapshot).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Persistence failures are ignored; the user can retry the operation later.
+        }
+        finally
+        {
+            _sessionSaveLock.Release();
+        }
+    }
+
+    private SessionStoreSnapshot BuildSnapshot()
+    {
+        var snapshot = new SessionStoreSnapshot
+        {
+            Version = SessionStoreSnapshot.CurrentVersion
         };
-        item.Click += AddProjectMenuItem_OnClick;
-        return item;
+
+        foreach (var (projectKey, state) in _sessionStates)
+        {
+            var projectSnapshot = new ProjectSessionSnapshot
+            {
+                ProjectId = projectKey,
+                ActiveSessionId = state.ActiveSessionId
+            };
+
+            foreach (var session in state.Sessions)
+            {
+                projectSnapshot.Sessions.Add(new ChatSessionSnapshot
+                {
+                    Id = session.Id,
+                    Title = session.Title,
+                    CreatedAt = session.CreatedAt,
+                    UpdatedAt = session.UpdatedAt,
+                    Messages = session.Messages.ToList()
+                });
+            }
+
+            snapshot.Projects.Add(projectSnapshot);
+        }
+
+        return snapshot;
+    }
+
+    private void AlignStateWithSnapshot(SessionStoreSnapshot snapshot)
+    {
+        foreach (var project in snapshot.Projects)
+        {
+            var projectKey = string.IsNullOrWhiteSpace(project.ProjectId)
+                ? DefaultProjectKey
+                : project.ProjectId;
+
+            var state = EnsureProjectSession(projectKey);
+            var existing = state.Sessions.ToDictionary(s => s.Id, s => s, StringComparer.Ordinal);
+
+            state.Sessions.Clear();
+
+            foreach (var sessionSnapshot in project.Sessions)
+            {
+                if (existing.TryGetValue(sessionSnapshot.Id, out var sessionState))
+                {
+                    sessionState.Title = sessionSnapshot.Title;
+                    sessionState.CreatedAt = sessionSnapshot.CreatedAt;
+                    sessionState.UpdatedAt = sessionSnapshot.UpdatedAt;
+                    sessionState.Messages.Clear();
+                    sessionState.Messages.AddRange(sessionSnapshot.Messages);
+                }
+                else
+                {
+                    sessionState = new ChatSessionState(
+                        sessionSnapshot.Id,
+                        sessionSnapshot.Title,
+                        sessionSnapshot.CreatedAt,
+                        sessionSnapshot.UpdatedAt,
+                        sessionSnapshot.Messages);
+                }
+
+                state.Sessions.Add(sessionState);
+            }
+
+            state.ActiveSessionId = project.ActiveSessionId ?? state.Sessions.FirstOrDefault()?.Id;
+
+            if (!string.IsNullOrWhiteSpace(state.ActiveSessionId))
+            {
+                _settings.ActiveSessions[projectKey] = state.ActiveSessionId;
+            }
+            else
+            {
+                _settings.ActiveSessions.Remove(projectKey);
+            }
+
+            if (IsProjectKeyActive(projectKey))
+            {
+                _activeSession = state.Sessions.FirstOrDefault(s => string.Equals(s.Id, state.ActiveSessionId, StringComparison.Ordinal))
+                                 ?? state.Sessions.FirstOrDefault();
+            }
+        }
+    }
+
+    private ProjectSessionState EnsureProjectSession(string projectKey)
+    {
+        if (!_sessionStates.TryGetValue(projectKey, out var state))
+        {
+            state = new ProjectSessionState(projectKey);
+            _sessionStates[projectKey] = state;
+        }
+
+        if (state.Sessions.Count == 0)
+        {
+            CreateNewSession(state);
+        }
+
+        return state;
+    }
+
+    private ChatSessionState CreateNewSession(ProjectSessionState projectState)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var session = new ChatSessionState(Guid.NewGuid().ToString("N"), "New Chat", now, now);
+        projectState.Sessions.Add(session);
+        return session;
     }
 
     private static void CopyProjectSettings(ProjectSettings target, ProjectSettings source)
@@ -304,5 +682,154 @@ public partial class MainWindow : Window
         target.WorkspacePath = source.WorkspacePath;
         target.ThemeId = source.ThemeId;
         target.FontFamily = source.FontFamily;
+    }
+
+    private bool IsProjectKeyActive(string projectKey)
+    {
+        if (_activeProject is null)
+        {
+            return string.Equals(projectKey, DefaultProjectKey, StringComparison.Ordinal);
+        }
+
+        return string.Equals(projectKey, _activeProject.Id, StringComparison.Ordinal);
+    }
+
+    private static string GetProjectKey(ProjectSettings? project)
+    {
+        if (project is null)
+        {
+            return DefaultProjectKey;
+        }
+
+        if (string.IsNullOrWhiteSpace(project.Id))
+        {
+            project.Id = Guid.NewGuid().ToString("N");
+        }
+
+        return project.Id;
+    }
+
+    private static void UpdateSessionMetadata(ChatSessionState session)
+    {
+        var lastMessage = session.Messages.LastOrDefault();
+        session.UpdatedAt = lastMessage?.Timestamp ?? DateTimeOffset.UtcNow;
+
+        var userMessage = session.Messages.FirstOrDefault(m => m.Role == MessageRole.User && !string.IsNullOrWhiteSpace(m.Content));
+        if (userMessage is not null)
+        {
+            session.Title = TrimTitle(userMessage.Content);
+        }
+        else if (session.Messages.Count == 0)
+        {
+            session.Title = "New Chat";
+        }
+    }
+
+    private static string TrimTitle(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return "New Chat";
+        }
+
+        var normalized = content.Replace("\r", " ")
+                                .Replace("\n", " ")
+                                .Trim();
+
+        const int MaxLength = 60;
+        if (normalized.Length > MaxLength)
+        {
+            normalized = normalized.Substring(0, MaxLength).TrimEnd() + "...";
+        }
+
+        return string.IsNullOrWhiteSpace(normalized) ? "New Chat" : normalized;
+    }
+
+    private static string ResolveActiveSessionId(ProjectSessionState state, string? preferredSessionId = null)
+    {
+        if (!string.IsNullOrWhiteSpace(preferredSessionId) &&
+            state.Sessions.Any(s => string.Equals(s.Id, preferredSessionId, StringComparison.Ordinal)))
+        {
+            return preferredSessionId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(state.ActiveSessionId) &&
+            state.Sessions.Any(s => string.Equals(s.Id, state.ActiveSessionId, StringComparison.Ordinal)))
+        {
+            return state.ActiveSessionId;
+        }
+
+        return state.Sessions
+            .OrderByDescending(s => s.UpdatedAt)
+            .First()
+            .Id;
+    }
+
+    public sealed class ProjectListItem
+    {
+        public ProjectListItem(string projectKey, ProjectSettings? project, string displayName)
+        {
+            ProjectKey = projectKey;
+            Project = project;
+            DisplayName = displayName;
+        }
+
+        public string ProjectKey { get; }
+
+        public ProjectSettings? Project { get; }
+
+        public string DisplayName { get; }
+    }
+
+    private sealed class ProjectSessionState
+    {
+        public ProjectSessionState(string projectKey)
+        {
+            ProjectKey = projectKey;
+        }
+
+        public string ProjectKey { get; }
+
+        public List<ChatSessionState> Sessions { get; } = new();
+
+        public string? ActiveSessionId { get; set; }
+    }
+
+    public sealed class ChatSessionState
+    {
+        public ChatSessionState(string id, string title, DateTimeOffset createdAt, DateTimeOffset updatedAt, IEnumerable<Message>? messages = null)
+        {
+            Id = string.IsNullOrWhiteSpace(id) ? Guid.NewGuid().ToString("N") : id;
+            Title = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
+            CreatedAt = createdAt;
+            UpdatedAt = updatedAt;
+            Messages = messages?.Where(m => m is not null).ToList() ?? new List<Message>();
+        }
+
+        public string Id { get; }
+
+        public string Title { get; set; }
+
+        public DateTimeOffset CreatedAt { get; set; }
+
+        public DateTimeOffset UpdatedAt { get; set; }
+
+        public List<Message> Messages { get; }
+    }
+
+    public sealed class ChatSessionListItem
+    {
+        public ChatSessionListItem(ChatSessionState session)
+        {
+            Session = session ?? throw new ArgumentNullException(nameof(session));
+            Title = string.IsNullOrWhiteSpace(session.Title) ? "New Chat" : session.Title;
+            Subtitle = session.UpdatedAt.ToLocalTime().ToString("g");
+        }
+
+        public ChatSessionState Session { get; }
+
+        public string Title { get; }
+
+        public string Subtitle { get; }
     }
 }

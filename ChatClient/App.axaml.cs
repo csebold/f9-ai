@@ -20,6 +20,7 @@ public partial class App : Application
     private ISettingsService _settingsService = null!;
     private IModelCatalogService _modelCatalogService = null!;
     private IProjectWorkspaceService _projectWorkspaceService = null!;
+    private ISessionPersistenceService _sessionPersistenceService = null!;
     private AppSettings _settings = null!;
     private IStartupInitializer _startupInitializer = null!;
 
@@ -41,6 +42,7 @@ public partial class App : Application
             _settingsService = new SettingsService();
             _modelCatalogService = new ModelCatalogService();
             _projectWorkspaceService = new ProjectWorkspaceService();
+            _sessionPersistenceService = new SessionPersistenceService();
             _startupInitializer = new StartupInitializer(_settingsService, _projectWorkspaceService);
 
             var splashViewModel = new SplashScreenViewModel();
@@ -103,6 +105,27 @@ public partial class App : Application
 
             _settings = initializationResult.Settings;
             var activeProject = initializationResult.ActiveProject;
+            SessionStoreSnapshot sessionSnapshot;
+            if (_settings.EnableSessionPersistence)
+            {
+                try
+                {
+                    sessionSnapshot = await _sessionPersistenceService.LoadAsync(initializationCts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    PostStatus($"Failed to load chat sessions: {ex.Message}");
+                    sessionSnapshot = new SessionStoreSnapshot();
+                }
+            }
+            else
+            {
+                sessionSnapshot = new SessionStoreSnapshot();
+            }
 
             PostStatus($"Configuring provider: {initializationResult.ProviderDisplayName}...");
             PostStatus("Checking MCP integrations (coming soon)...");
@@ -113,7 +136,7 @@ public partial class App : Application
                 splashViewModel.ClearCancellationOffer();
 
                 var mainWindowViewModel = new MainWindowViewModel();
-                var mainWindow = new MainWindow(_settingsService, _modelCatalogService, _settings, activeProject)
+                var mainWindow = new MainWindow(_settingsService, _modelCatalogService, _sessionPersistenceService, _settings, activeProject, sessionSnapshot)
                 {
                     DataContext = mainWindowViewModel
                 };

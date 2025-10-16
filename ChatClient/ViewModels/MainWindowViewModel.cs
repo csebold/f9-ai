@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Threading;
@@ -51,13 +52,13 @@ public partial class MainWindowViewModel : ViewModelBase
     private CancellationTokenSource? _responseCancellation;
     private string? _lastPrompt;
 
-    public MainWindowViewModel(LlmClientRegistration? registration = null, string? projectName = null, string? projectInstructions = null, bool hasCustomProject = false)
+    public MainWindowViewModel(LlmClientRegistration? registration = null, string? projectName = null, string? projectInstructions = null, bool hasCustomProject = false, IEnumerable<Message>? initialMessages = null)
     {
         SendCommand = new AsyncRelayCommand(SendAsync, CanSendPrompt);
         StopCommand = new RelayCommand(StopRequest, CanStopRequest);
         RetryCommand = new AsyncRelayCommand(RetryAsync, CanRetryRequest);
 
-        AddMessage("System", "Welcome to Foundry-9 AI.", MessageRole.System);
+        ResetMessages(initialMessages, includeWelcomeWhenEmpty: true);
 
         var name = string.IsNullOrWhiteSpace(projectName) ? DefaultProjectName : projectName.Trim();
         var instructions = projectInstructions?.Trim() ?? string.Empty;
@@ -83,8 +84,14 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public string CurrentModel => _registration.ModelId;
 
-    public void ChangeProject(LlmClientRegistration registration, string projectName, string instructions, bool hasCustomProject, bool isUpdate = true) =>
-        ApplyContext(registration, projectName, instructions, hasCustomProject, isUpdate, emitStatusMessage: true);
+    public void ChangeProject(
+        LlmClientRegistration registration,
+        string projectName,
+        string instructions,
+        bool hasCustomProject,
+        bool isUpdate = true,
+        bool emitStatusMessage = true) =>
+        ApplyContext(registration, projectName, instructions, hasCustomProject, isUpdate, emitStatusMessage);
 
     private LlmClientRegistration CreateFallbackRegistration(string message)
     {
@@ -195,6 +202,27 @@ public partial class MainWindowViewModel : ViewModelBase
         }
 
         return $"{duration.TotalSeconds:F1} s";
+    }
+
+    public void ResetMessages(IEnumerable<Message>? messages, bool includeWelcomeWhenEmpty)
+    {
+        Messages.Clear();
+
+        if (messages is not null)
+        {
+            foreach (var message in messages)
+            {
+                if (message is not null)
+                {
+                    Messages.Add(message);
+                }
+            }
+        }
+
+        if (includeWelcomeWhenEmpty && Messages.Count == 0)
+        {
+            AddMessage("System", "Welcome to Foundry-9 AI.", MessageRole.System);
+        }
     }
 
     private void ApplyContext(LlmClientRegistration registration, string projectName, string instructions, bool hasCustomProject, bool isUpdate, bool emitStatusMessage)

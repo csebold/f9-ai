@@ -15,14 +15,20 @@ public partial class SettingsViewModel : ObservableObject
 {
     private readonly ISettingsService _settingsService;
     private readonly IModelCatalogService _modelCatalogService;
+    private readonly ISessionPersistenceService _sessionPersistenceService;
     private readonly AppSettings _workingCopy;
     private readonly Dictionary<LlmProvider, IReadOnlyList<string>> _modelCache = new();
     private bool _isInitialized;
 
-    public SettingsViewModel(ISettingsService settingsService, IModelCatalogService modelCatalogService, AppSettings settings)
+    public SettingsViewModel(
+        ISettingsService settingsService,
+        IModelCatalogService modelCatalogService,
+        AppSettings settings,
+        ISessionPersistenceService sessionPersistenceService)
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _modelCatalogService = modelCatalogService ?? throw new ArgumentNullException(nameof(modelCatalogService));
+        _sessionPersistenceService = sessionPersistenceService ?? throw new ArgumentNullException(nameof(sessionPersistenceService));
         _workingCopy = settings is null ? throw new ArgumentNullException(nameof(settings)) : Clone(settings);
 
         Providers = new ObservableCollection<ProviderOption>(new[]
@@ -37,6 +43,9 @@ public partial class SettingsViewModel : ObservableObject
         OpenAiApiKey = _workingCopy.OpenAi.ApiKey;
         AnthropicApiKey = _workingCopy.Anthropic.ApiKey;
         OpenRouterApiKey = _workingCopy.OpenRouter.ApiKey;
+        EnableSessionPersistence = _workingCopy.EnableSessionPersistence;
+        MaxSessionsPerProject = Math.Max(1, _workingCopy.MaxSessionsPerProject);
+        MaxMessagesPerSession = Math.Max(1, _workingCopy.MaxMessagesPerSession);
 
         SelectedProviderOption = Providers.FirstOrDefault(p => p.Provider == _workingCopy.Provider);
         if (SelectedProviderOption == default)
@@ -49,6 +58,7 @@ public partial class SettingsViewModel : ObservableObject
         FetchModelsCommand = new AsyncRelayCommand(FetchModelsAsync, CanFetchModels);
         SaveCommand = new AsyncRelayCommand(SaveAsync, CanSave);
         CancelCommand = new RelayCommand(InvokeCancelled);
+        PurgeChatsCommand = new AsyncRelayCommand(PurgeChatsAsync, CanPurgeChats);
 
         _isInitialized = true;
         LoadModelsFromCache(CurrentProvider);
@@ -83,11 +93,22 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _statusMessage = string.Empty;
 
+    [ObservableProperty]
+    private bool _enableSessionPersistence;
+
+    [ObservableProperty]
+    private double _maxSessionsPerProject;
+
+    [ObservableProperty]
+    private double _maxMessagesPerSession;
+
     public IAsyncRelayCommand FetchModelsCommand { get; }
 
     public IAsyncRelayCommand SaveCommand { get; }
 
     public IRelayCommand CancelCommand { get; }
+
+    public IAsyncRelayCommand PurgeChatsCommand { get; }
 
     private LlmProvider CurrentProvider => SelectedProviderOption.Provider;
 
@@ -108,6 +129,8 @@ public partial class SettingsViewModel : ObservableObject
 
         return !string.IsNullOrWhiteSpace(SelectedModel);
     }
+
+    private bool CanPurgeChats() => !IsBusy;
 
     private async Task FetchModelsAsync()
     {
@@ -135,6 +158,29 @@ public partial class SettingsViewModel : ObservableObject
         }
     }
 
+    private async Task PurgeChatsAsync()
+    {
+        try
+        {
+            IsBusy = true;
+            StatusMessage = "Purging stored chats...";
+
+            await _sessionPersistenceService.PurgeAsync(CancellationToken.None);
+            StatusMessage = "Stored chats purged.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Failed to purge chats: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+            PurgeChatsCommand.NotifyCanExecuteChanged();
+            FetchModelsCommand.NotifyCanExecuteChanged();
+            SaveCommand.NotifyCanExecuteChanged();
+        }
+    }
+
     private async Task SaveAsync()
     {
         try
@@ -145,6 +191,9 @@ public partial class SettingsViewModel : ObservableObject
             _workingCopy.Provider = CurrentProvider;
             var providerSettings = _workingCopy.GetProviderSettings(CurrentProvider);
             providerSettings.Model = SelectedModel ?? string.Empty;
+            _workingCopy.EnableSessionPersistence = EnableSessionPersistence;
+            _workingCopy.MaxSessionsPerProject = NormalizeLimit(MaxSessionsPerProject);
+            _workingCopy.MaxMessagesPerSession = NormalizeLimit(MaxMessagesPerSession);
 
             await _settingsService.SaveAsync(_workingCopy, CancellationToken.None);
             StatusMessage = "Settings saved.";
@@ -222,6 +271,17 @@ public partial class SettingsViewModel : ObservableObject
             _ => "OpenAI"
         };
 
+    private static int NormalizeLimit(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+        {
+            return 1;
+        }
+
+        var rounded = (int)Math.Round(value, MidpointRounding.AwayFromZero);
+        return Math.Max(1, rounded);
+    }
+
     private static AppSettings Clone(AppSettings source)
     {
         return new AppSettings
@@ -243,7 +303,13 @@ public partial class SettingsViewModel : ObservableObject
                 Model = source.OpenRouter.Model
             },
             ActiveProjectId = source.ActiveProjectId,
-            Projects = source.Projects.Select(CloneProject).ToList()
+            Projects = source.Projects.Select(CloneProject).ToList(),
+            EnableSessionPersistence = source.EnableSessionPersistence,
+            MaxSessionsPerProject = source.MaxSessionsPerProject,
+            MaxMessagesPerSession = source.MaxMessagesPerSession,
+            ActiveSessions = source.ActiveSessions?.Count > 0
+                ? new Dictionary<string, string>(source.ActiveSessions, StringComparer.Ordinal)
+                : new Dictionary<string, string>(StringComparer.Ordinal)
         };
     }
 

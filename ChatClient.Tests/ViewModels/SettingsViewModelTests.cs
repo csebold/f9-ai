@@ -24,7 +24,8 @@ public class SettingsViewModelTests
 
         var settingsService = new RecordingSettingsService();
         var modelCatalogService = new StubModelCatalogService();
-        var viewModel = new SettingsViewModel(settingsService, modelCatalogService, settings);
+        var sessionService = new StubSessionPersistenceService();
+        var viewModel = new SettingsViewModel(settingsService, modelCatalogService, settings, sessionService);
 
         AppSettings? savedResult = null;
         viewModel.Saved += (_, updated) => savedResult = updated;
@@ -44,6 +45,36 @@ public class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task SaveCommand_PersistsSessionSettings()
+    {
+        var settings = new AppSettings
+        {
+            Provider = LlmProvider.OpenAi,
+            OpenAi = new ProviderSettings { ApiKey = "openai-key", Model = "gpt-4o-mini" },
+            EnableSessionPersistence = true,
+            MaxSessionsPerProject = 5,
+            MaxMessagesPerSession = 150
+        };
+
+        var settingsService = new RecordingSettingsService();
+        var modelCatalogService = new StubModelCatalogService();
+        var sessionService = new StubSessionPersistenceService();
+        var viewModel = new SettingsViewModel(settingsService, modelCatalogService, settings, sessionService);
+
+        viewModel.EnableSessionPersistence = false;
+        viewModel.MaxSessionsPerProject = 3;
+        viewModel.MaxMessagesPerSession = 42;
+        viewModel.SelectedModel = "gpt-4o-mini";
+
+        await viewModel.SaveCommand.ExecuteAsync(null);
+
+        Assert.NotNull(settingsService.LastSaved);
+        Assert.False(settingsService.LastSaved!.EnableSessionPersistence);
+        Assert.Equal(3, settingsService.LastSaved.MaxSessionsPerProject);
+        Assert.Equal(42, settingsService.LastSaved.MaxMessagesPerSession);
+    }
+
+    [Fact]
     public async Task SaveCommand_UpdatesProviderSelection()
     {
         var settings = new AppSettings
@@ -55,7 +86,8 @@ public class SettingsViewModelTests
 
         var settingsService = new RecordingSettingsService();
         var modelCatalogService = new StubModelCatalogService(new[] { "claude-3-haiku", "claude-3-sonnet" });
-        var viewModel = new SettingsViewModel(settingsService, modelCatalogService, settings);
+        var sessionService = new StubSessionPersistenceService();
+        var viewModel = new SettingsViewModel(settingsService, modelCatalogService, settings, sessionService);
 
         var anthropicOption = viewModel.Providers.First(p => p.Provider == LlmProvider.Anthropic);
         viewModel.SelectedProviderOption = anthropicOption;
@@ -84,7 +116,8 @@ public class SettingsViewModelTests
 
         var settingsService = new RecordingSettingsService();
         var modelCatalogService = new StubModelCatalogService();
-        var viewModel = new SettingsViewModel(settingsService, modelCatalogService, settings);
+        var sessionService = new StubSessionPersistenceService();
+        var viewModel = new SettingsViewModel(settingsService, modelCatalogService, settings, sessionService);
 
         viewModel.OpenAiApiKey = "openai-updated";
         viewModel.SelectedModel = "gpt-4o-mini";
@@ -109,7 +142,8 @@ public class SettingsViewModelTests
 
         var settingsService = new RecordingSettingsService();
         var modelCatalogService = new StubModelCatalogService(new[] { "gpt-4o-mini", "gpt-4o" });
-        var viewModel = new SettingsViewModel(settingsService, modelCatalogService, settings);
+        var sessionService = new StubSessionPersistenceService();
+        var viewModel = new SettingsViewModel(settingsService, modelCatalogService, settings, sessionService);
 
         Assert.True(viewModel.FetchModelsCommand.CanExecute(null));
 
@@ -119,6 +153,26 @@ public class SettingsViewModelTests
         Assert.Contains("gpt-4o-mini", viewModel.AvailableModels);
         Assert.Contains("gpt-4o", viewModel.AvailableModels);
         Assert.False(string.IsNullOrWhiteSpace(viewModel.SelectedModel));
+    }
+
+    [Fact]
+    public async Task PurgeChatsCommand_InvokesService()
+    {
+        var settings = new AppSettings
+        {
+            Provider = LlmProvider.OpenAi,
+            OpenAi = new ProviderSettings { ApiKey = "openai-key", Model = "gpt-4o-mini" }
+        };
+
+        var settingsService = new RecordingSettingsService();
+        var modelCatalogService = new StubModelCatalogService();
+        var sessionService = new StubSessionPersistenceService();
+        var viewModel = new SettingsViewModel(settingsService, modelCatalogService, settings, sessionService);
+
+        await viewModel.PurgeChatsCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, sessionService.PurgeCallCount);
+        Assert.Contains("purged", viewModel.StatusMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class RecordingSettingsService : ISettingsService
@@ -151,5 +205,23 @@ public class SettingsViewModelTests
 
         public Task<IReadOnlyList<string>> GetModelsAsync(LlmProvider provider, string apiKey, CancellationToken cancellationToken)
             => Task.FromResult(_models);
+    }
+
+    private sealed class StubSessionPersistenceService : ISessionPersistenceService
+    {
+        public int PurgeCallCount { get; private set; }
+
+        public Task<SessionStoreSnapshot> LoadAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new SessionStoreSnapshot());
+
+        public Task SaveAsync(SessionStoreSnapshot snapshot, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task PurgeAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            PurgeCallCount++;
+            return Task.CompletedTask;
+        }
     }
 }

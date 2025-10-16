@@ -4,217 +4,287 @@
         xmlns:model="using:ChatClient.Models"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        xmlns:views="using:ChatClient.Views"
+        mc:Ignorable="d"
+        d:DesignWidth="1120"
+        d:DesignHeight="720"
         x:Class="ChatClient.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         xmlns:conv="using:ChatClient.Converters"
         Icon="/Assets/avalonia-logo.ico"
         Title="Foundry-9 AI">
 
-    <Window.Resources>
-        <ResourceDictionary>
-            <ResourceDictionary.ThemeDictionaries>
-                <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="ConversationPanelBackgroundBrush" Color="#FFF5F6F8"/>
-                    <SolidColorBrush x:Key="ComposerBackgroundBrush" Color="#FFFFFFFF"/>
-                    <SolidColorBrush x:Key="AssistantMessageBackgroundBrush" Color="#FFFFFFFF"/>
-                    <SolidColorBrush x:Key="UserMessageBackgroundBrush" Color="#FFE1F0FF"/>
-                    <SolidColorBrush x:Key="SystemMessageBackgroundBrush" Color="#FFF0F2F5"/>
-                    <SolidColorBrush x:Key="MessageForegroundBrush" Color="#FF1F1F1F"/>
-                    <SolidColorBrush x:Key="AuthorForegroundBrush" Color="#FF4A4A4A"/>
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="ConversationPanelBackgroundBrush" Color="#FF1E1E1E"/>
-                    <SolidColorBrush x:Key="ComposerBackgroundBrush" Color="#FF262626"/>
-                    <SolidColorBrush x:Key="AssistantMessageBackgroundBrush" Color="#FF2B2B2B"/>
-                    <SolidColorBrush x:Key="UserMessageBackgroundBrush" Color="#FF0F3D63"/>
-                    <SolidColorBrush x:Key="SystemMessageBackgroundBrush" Color="#FF212833"/>
-                    <SolidColorBrush x:Key="MessageForegroundBrush" Color="#FFECECEC"/>
-                    <SolidColorBrush x:Key="AuthorForegroundBrush" Color="#FFB4C5FF"/>
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="Default">
-                    <SolidColorBrush x:Key="ConversationPanelBackgroundBrush" Color="#FF2B2B2B"/>
-                    <SolidColorBrush x:Key="ComposerBackgroundBrush" Color="#FF2F2F2F"/>
-                    <SolidColorBrush x:Key="AssistantMessageBackgroundBrush" Color="#FF2F2F2F"/>
-                    <SolidColorBrush x:Key="UserMessageBackgroundBrush" Color="#FF0F3D63"/>
-                    <SolidColorBrush x:Key="SystemMessageBackgroundBrush" Color="#FF21313F"/>
-                    <SolidColorBrush x:Key="MessageForegroundBrush" Color="#FFECECEC"/>
-                    <SolidColorBrush x:Key="AuthorForegroundBrush" Color="#FFB4C5FF"/>
-                </ResourceDictionary>
-            </ResourceDictionary.ThemeDictionaries>
-
-            <conv:HalfValueConverter x:Key="HalfValueConverter"/>
-            <conv:FractionValueConverter x:Key="TwoThirdsWidthConverter" Factor="0.66"/>
-            <conv:MessageRoleToBrushConverter x:Key="MessageRoleToBrushConverter"
-                                              UserBrush="{StaticResource UserMessageBackgroundBrush}"
-                                              AssistantBrush="{StaticResource AssistantMessageBackgroundBrush}"
-                                              SystemBrush="{StaticResource SystemMessageBackgroundBrush}"/>
-            <conv:MessageRoleToHorizontalAlignmentConverter x:Key="MessageRoleToHorizontalAlignmentConverter"/>
-            <conv:MessageRoleToThicknessConverter x:Key="MessageRoleToMarginConverter"/>
-            <conv:MessageRoleToFontStyleConverter x:Key="MessageRoleToFontStyleConverter"/>
-            <conv:MessageRoleToTextAlignmentConverter x:Key="MessageRoleToTextAlignmentConverter"/>
-            <conv:StringNotEmptyToBoolConverter x:Key="StringNotEmptyToBoolConverter"/>
-            <conv:BooleanNegationConverter x:Key="BooleanNegationConverter"/>
+  <Window.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="ConversationPanelBackgroundBrush" Color="#FFF5F6F8" />
+          <SolidColorBrush x:Key="ComposerBackgroundBrush" Color="#FFFFFFFF" />
+          <SolidColorBrush x:Key="AssistantMessageBackgroundBrush" Color="#FFFFFFFF" />
+          <SolidColorBrush x:Key="UserMessageBackgroundBrush" Color="#FFE1F0FF" />
+          <SolidColorBrush x:Key="SystemMessageBackgroundBrush" Color="#FFF0F2F5" />
+          <SolidColorBrush x:Key="MessageForegroundBrush" Color="#FF1F1F1F" />
+          <SolidColorBrush x:Key="AuthorForegroundBrush" Color="#FF4A4A4A" />
         </ResourceDictionary>
-    </Window.Resources>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="ConversationPanelBackgroundBrush" Color="#FF1E1E1E" />
+          <SolidColorBrush x:Key="ComposerBackgroundBrush" Color="#FF262626" />
+          <SolidColorBrush x:Key="AssistantMessageBackgroundBrush" Color="#FF2B2B2B" />
+          <SolidColorBrush x:Key="UserMessageBackgroundBrush" Color="#FF0F3D63" />
+          <SolidColorBrush x:Key="SystemMessageBackgroundBrush" Color="#FF212833" />
+          <SolidColorBrush x:Key="MessageForegroundBrush" Color="#FFECECEC" />
+          <SolidColorBrush x:Key="AuthorForegroundBrush" Color="#FFB4C5FF" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Default">
+          <SolidColorBrush x:Key="ConversationPanelBackgroundBrush" Color="#FF2B2B2B" />
+          <SolidColorBrush x:Key="ComposerBackgroundBrush" Color="#FF2F2F2F" />
+          <SolidColorBrush x:Key="AssistantMessageBackgroundBrush" Color="#FF2F2F2F" />
+          <SolidColorBrush x:Key="UserMessageBackgroundBrush" Color="#FF0F3D63" />
+          <SolidColorBrush x:Key="SystemMessageBackgroundBrush" Color="#FF21313F" />
+          <SolidColorBrush x:Key="MessageForegroundBrush" Color="#FFECECEC" />
+          <SolidColorBrush x:Key="AuthorForegroundBrush" Color="#FFB4C5FF" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
 
-    <Design.DataContext>
-        <!-- This only sets the DataContext for the previewer in an IDE,
-             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
-        <vm:MainWindowViewModel/>
-    </Design.DataContext>
+      <conv:HalfValueConverter x:Key="HalfValueConverter" />
+      <conv:FractionValueConverter x:Key="TwoThirdsWidthConverter" Factor="0.66" />
+      <conv:MessageRoleToBrushConverter x:Key="MessageRoleToBrushConverter"
+                                        UserBrush="{StaticResource UserMessageBackgroundBrush}"
+                                        AssistantBrush="{StaticResource AssistantMessageBackgroundBrush}"
+                                        SystemBrush="{StaticResource SystemMessageBackgroundBrush}" />
+      <conv:MessageRoleToHorizontalAlignmentConverter x:Key="MessageRoleToHorizontalAlignmentConverter" />
+      <conv:MessageRoleToThicknessConverter x:Key="MessageRoleToMarginConverter" />
+      <conv:MessageRoleToFontStyleConverter x:Key="MessageRoleToFontStyleConverter" />
+      <conv:MessageRoleToTextAlignmentConverter x:Key="MessageRoleToTextAlignmentConverter" />
+      <conv:StringNotEmptyToBoolConverter x:Key="StringNotEmptyToBoolConverter" />
+      <conv:BooleanNegationConverter x:Key="BooleanNegationConverter" />
+    </ResourceDictionary>
+  </Window.Resources>
 
-    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="12" Margin="16">
-        <Menu Grid.Row="0">
-            <MenuItem Header="Projects" x:Name="ProjectsMenuRoot"/>
-        </Menu>
+  <Design.DataContext>
+    <vm:MainWindowViewModel />
+  </Design.DataContext>
 
-        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
-            <StackPanel Orientation="Vertical" Spacing="2">
-                <TextBlock FontSize="20"
-                           FontWeight="SemiBold"
-                           Foreground="{DynamicResource MessageForegroundBrush}"
-                           Text="Foundry-9 AI Conversation"
-                           HorizontalAlignment="Left"/>
-                <TextBlock FontSize="14"
-                           FontWeight="SemiBold"
-                           Foreground="{DynamicResource AuthorForegroundBrush}"
-                           Text="{Binding CurrentProjectName}"/>
-                <TextBlock FontSize="12"
-                           Foreground="{DynamicResource AuthorForegroundBrush}"
-                           Text="{Binding CurrentProvider}"/>
-                <TextBlock FontSize="12"
-                           Foreground="{DynamicResource AuthorForegroundBrush}"
-                           Text="{Binding CurrentModel}"/>
-                <TextBlock FontSize="12"
-                           Foreground="{DynamicResource AuthorForegroundBrush}"
-                           TextWrapping="Wrap"
-                           MaxHeight="80"
-                           IsVisible="{Binding CurrentInstructions, Converter={StaticResource StringNotEmptyToBoolConverter}}"
-                           Text="{Binding CurrentInstructions}"/>
-            </StackPanel>
-            <Button Grid.Column="1"
-                    Content="Project Settings"
-                    HorizontalAlignment="Right"
-                    Padding="12,6"
-                    IsEnabled="{Binding HasCustomProject}"
-                    Click="ProjectSettingsButton_OnClick"/>
-            <Button Grid.Column="2"
-                    Content="Settings"
-                    HorizontalAlignment="Right"
-                    Padding="12,6"
-                    Click="SettingsButton_OnClick"/>
-        </Grid>
+  <Grid ColumnDefinitions="260,*">
+    <Border Grid.Column="0"
+            Background="{DynamicResource ComposerBackgroundBrush}">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="16"
+                    Spacing="16">
+          <StackPanel Spacing="8">
+            <TextBlock Text="Projects"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource AuthorForegroundBrush}" />
+            <ListBox x:Name="ProjectsList"
+                     SelectionChanged="ProjectsList_OnSelectionChanged">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="views:MainWindow+ProjectListItem">
+                  <TextBlock Text="{Binding DisplayName}"
+                             Margin="0,2"
+                             TextTrimming="CharacterEllipsis"
+                             Foreground="{DynamicResource MessageForegroundBrush}" />
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <Button Content="+ New Project"
+                    HorizontalAlignment="Left"
+                    Click="AddProjectButton_OnClick" />
+          </StackPanel>
 
-        <Border Grid.Row="2"
-                Background="{DynamicResource ConversationPanelBackgroundBrush}"
-                CornerRadius="6"
-                Padding="12">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <ItemsControl ItemsSource="{Binding Messages}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="model:Message">
-                            <Border Margin="{Binding Role, Converter={StaticResource MessageRoleToMarginConverter}}"
-                                    Padding="8"
-                                    CornerRadius="6"
-                                    Background="{Binding Role, Converter={StaticResource MessageRoleToBrushConverter}}"
-                                    HorizontalAlignment="{Binding Role, Converter={StaticResource MessageRoleToHorizontalAlignmentConverter}}"
-                                    MaxWidth="{Binding Bounds.Width, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource TwoThirdsWidthConverter}}">
-                                <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                                              VerticalScrollBarVisibility="Disabled"
-                                              MaxWidth="{Binding Bounds.Width, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource TwoThirdsWidthConverter}}">
-                                    <StackPanel Spacing="4">
-                                        <TextBlock Text="{Binding Author}"
-                                                   FontSize="13"
-                                                   FontWeight="Bold"
-                                                   FontStyle="{Binding Role, Converter={StaticResource MessageRoleToFontStyleConverter}}"
-                                                   Foreground="{DynamicResource AuthorForegroundBrush}"
-                                                   TextAlignment="{Binding Role, Converter={StaticResource MessageRoleToTextAlignmentConverter}}"/>
-                                        <TextBlock Text="{Binding Content}"
-                                                   TextWrapping="Wrap"
-                                                   FontStyle="{Binding Role, Converter={StaticResource MessageRoleToFontStyleConverter}}"
-                                                   Foreground="{DynamicResource MessageForegroundBrush}"
-                                                   TextAlignment="{Binding Role, Converter={StaticResource MessageRoleToTextAlignmentConverter}}"/>
-                                    </StackPanel>
-                                </ScrollViewer>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </ScrollViewer>
-        </Border>
+          <Separator />
 
-        <Border Grid.Row="3"
-                Background="{DynamicResource ComposerBackgroundBrush}"
-                CornerRadius="6"
-                Padding="12 12 12 16">
+          <StackPanel Spacing="8">
             <Grid ColumnDefinitions="*,Auto"
-                  RowDefinitions="Auto,Auto"
-                  ColumnSpacing="12"
-                  RowSpacing="8">
-                <StackPanel Grid.Row="0"
-                            Grid.ColumnSpan="2"
-                            Orientation="Horizontal"
-                            Spacing="8"
-                            VerticalAlignment="Center"
-                            IsVisible="{Binding IsResponding}">
-                    <ProgressBar Width="80"
-                                 Height="6"
-                                 IsIndeterminate="True"
-                                 VerticalAlignment="Center"/>
-                    <TextBlock Text="Assistant is thinking..."
-                               Foreground="{DynamicResource AuthorForegroundBrush}"
-                               VerticalAlignment="Center"/>
-                </StackPanel>
-
-                <TextBox Grid.Row="1"
-                         Grid.Column="0"
-                         Text="{Binding Prompt, UpdateSourceTrigger=PropertyChanged}"
-                         TextWrapping="Wrap"
-                         AcceptsReturn="True"
-                         MinLines="3"
-                         IsEnabled="{Binding IsResponding, Converter={StaticResource BooleanNegationConverter}}"
-                         ScrollViewer.VerticalScrollBarVisibility="Auto"
-                         Watermark="Type your message..."
-                         MaxHeight="{Binding Bounds.Height, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource HalfValueConverter}}"/>
-
-                <Grid Grid.Row="1"
-                      Grid.Column="1"
-                      HorizontalAlignment="Right">
-                    <Button Content="Send"
-                            Padding="20 12"
-                            Command="{Binding SendCommand}"
-                            IsVisible="{Binding IsResponding, Converter={StaticResource BooleanNegationConverter}}"/>
-                    <Button Content="Stop"
-                            Padding="20 12"
-                            Command="{Binding StopCommand}"
-                            IsVisible="{Binding IsResponding}"/>
-                </Grid>
+                  VerticalAlignment="Center">
+              <TextBlock Grid.Column="0"
+                         Text="Chat Sessions"
+                         FontSize="16"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource AuthorForegroundBrush}" />
+              <Button Grid.Column="1"
+                      Content="+ New Chat"
+                      Click="NewChatButton_OnClick" />
             </Grid>
-        </Border>
-
-        <Border Grid.Row="4"
-                Background="{DynamicResource ComposerBackgroundBrush}"
-                CornerRadius="6"
-                Padding="8 6 12 8">
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                <StackPanel Orientation="Vertical" Spacing="2">
-                    <TextBlock Text="{Binding StatusMessage}"
+            <ListBox x:Name="SessionsList"
+                     SelectionChanged="SessionsList_OnSelectionChanged">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="views:MainWindow+ChatSessionListItem">
+                  <StackPanel Orientation="Vertical"
+                              Spacing="4">
+                    <TextBlock Text="{Binding Title}"
+                               FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource MessageForegroundBrush}" />
+                    <TextBlock Text="{Binding Subtitle}"
+                               FontSize="11"
                                Foreground="{DynamicResource AuthorForegroundBrush}"
-                               TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding ErrorSummary}"
-                               Foreground="#FFD95B5B"
-                               FontStyle="Italic"
+                               TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+
+    <Grid Grid.Column="1"
+          Margin="16"
+          RowDefinitions="Auto,*,Auto,Auto"
+          RowSpacing="12">
+      <Grid Grid.Row="0"
+            ColumnDefinitions="*,Auto,Auto"
+            ColumnSpacing="12">
+        <StackPanel Orientation="Vertical"
+                    Spacing="2">
+          <TextBlock FontSize="20"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource MessageForegroundBrush}"
+                     Text="Foundry-9 AI Conversation"
+                     HorizontalAlignment="Left" />
+          <TextBlock FontSize="14"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource AuthorForegroundBrush}"
+                     Text="{Binding CurrentProjectName}" />
+          <TextBlock FontSize="12"
+                     Foreground="{DynamicResource AuthorForegroundBrush}"
+                     Text="{Binding CurrentProvider}" />
+          <TextBlock FontSize="12"
+                     Foreground="{DynamicResource AuthorForegroundBrush}"
+                     Text="{Binding CurrentModel}" />
+          <TextBlock FontSize="12"
+                     Foreground="{DynamicResource AuthorForegroundBrush}"
+                     TextWrapping="Wrap"
+                     MaxHeight="80"
+                     IsVisible="{Binding CurrentInstructions, Converter={StaticResource StringNotEmptyToBoolConverter}}"
+                     Text="{Binding CurrentInstructions}" />
+        </StackPanel>
+        <Button Grid.Column="1"
+                Content="Project Settings"
+                HorizontalAlignment="Right"
+                Padding="12,6"
+                IsEnabled="{Binding HasCustomProject}"
+                Click="ProjectSettingsButton_OnClick" />
+        <Button Grid.Column="2"
+                Content="Settings"
+                HorizontalAlignment="Right"
+                Padding="12,6"
+                Click="SettingsButton_OnClick" />
+      </Grid>
+
+      <Border Grid.Row="1"
+              Background="{DynamicResource ConversationPanelBackgroundBrush}"
+              CornerRadius="6"
+              Padding="12">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <ItemsControl ItemsSource="{Binding Messages}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                <VirtualizingStackPanel Orientation="Vertical" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="model:Message">
+                <Border Margin="{Binding Role, Converter={StaticResource MessageRoleToMarginConverter}}"
+                        Padding="8"
+                        CornerRadius="6"
+                        Background="{Binding Role, Converter={StaticResource MessageRoleToBrushConverter}}"
+                        HorizontalAlignment="{Binding Role, Converter={StaticResource MessageRoleToHorizontalAlignmentConverter}}"
+                        MaxWidth="{Binding Bounds.Width, RelativeSource={RelativeSource AncestorType=ScrollViewer}, Converter={StaticResource TwoThirdsWidthConverter}}">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding Author}"
+                               FontWeight="SemiBold"
+                               FontStyle="{Binding Role, Converter={StaticResource MessageRoleToFontStyleConverter}}"
+                               Foreground="{DynamicResource AuthorForegroundBrush}"
+                               TextAlignment="{Binding Role, Converter={StaticResource MessageRoleToTextAlignmentConverter}}" />
+                    <TextBlock Text="{Binding Content}"
                                TextWrapping="Wrap"
-                               IsVisible="{Binding ErrorSummary, Converter={StaticResource StringNotEmptyToBoolConverter}}"/>
-                </StackPanel>
-                <Button Grid.Column="1"
-                        Content="Retry"
-                        Padding="16 8"
-                        Command="{Binding RetryCommand}"
-                        IsVisible="{Binding CanRetry}"/>
-            </Grid>
-        </Border>
+                               FontStyle="{Binding Role, Converter={StaticResource MessageRoleToFontStyleConverter}}"
+                               Foreground="{DynamicResource MessageForegroundBrush}"
+                               TextAlignment="{Binding Role, Converter={StaticResource MessageRoleToTextAlignmentConverter}}" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Border>
+
+      <Border Grid.Row="2"
+              Background="{DynamicResource ComposerBackgroundBrush}"
+              CornerRadius="6"
+              Padding="12 12 12 16">
+        <Grid ColumnDefinitions="*,Auto"
+              RowDefinitions="Auto,Auto"
+              ColumnSpacing="12"
+              RowSpacing="8">
+          <StackPanel Grid.Row="0"
+                      Grid.ColumnSpan="2"
+                      Orientation="Horizontal"
+                      Spacing="8"
+                      VerticalAlignment="Center"
+                      IsVisible="{Binding IsResponding}">
+            <ProgressBar Width="80"
+                         Height="6"
+                         IsIndeterminate="True"
+                         VerticalAlignment="Center" />
+            <TextBlock Text="Assistant is thinking..."
+                       Foreground="{DynamicResource AuthorForegroundBrush}"
+                       VerticalAlignment="Center" />
+          </StackPanel>
+
+          <TextBox Grid.Row="1"
+                   Grid.Column="0"
+                   Text="{Binding Prompt, UpdateSourceTrigger=PropertyChanged}"
+                   TextWrapping="Wrap"
+                   AcceptsReturn="True"
+                   MinLines="3"
+                   IsEnabled="{Binding IsResponding, Converter={StaticResource BooleanNegationConverter}}"
+                   ScrollViewer.VerticalScrollBarVisibility="Auto"
+                   Watermark="Type your message..."
+                   MaxHeight="{Binding Bounds.Height, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource HalfValueConverter}}" />
+
+          <Grid Grid.Row="1"
+                Grid.Column="1"
+                HorizontalAlignment="Right">
+            <Button Content="Send"
+                    Padding="20 12"
+                    Command="{Binding SendCommand}"
+                    IsVisible="{Binding IsResponding, Converter={StaticResource BooleanNegationConverter}}" />
+            <Button Content="Stop"
+                    Padding="20 12"
+                    Command="{Binding StopCommand}"
+                    IsVisible="{Binding IsResponding}" />
+          </Grid>
+        </Grid>
+      </Border>
+
+      <Border Grid.Row="3"
+              Background="{DynamicResource ComposerBackgroundBrush}"
+              CornerRadius="6"
+              Padding="8 6 12 8">
+        <Grid ColumnDefinitions="*,Auto"
+              ColumnSpacing="12">
+          <StackPanel Orientation="Vertical"
+                      Spacing="2">
+            <TextBlock Text="{Binding StatusMessage}"
+                       Foreground="{DynamicResource AuthorForegroundBrush}"
+                       TextWrapping="Wrap" />
+            <TextBlock Text="{Binding ErrorSummary}"
+                       Foreground="#FFD95B5B"
+                       FontStyle="Italic"
+                       TextWrapping="Wrap"
+                       IsVisible="{Binding ErrorSummary, Converter={StaticResource StringNotEmptyToBoolConverter}}" />
+          </StackPanel>
+          <Button Grid.Column="1"
+                  Content="Retry"
+                  Padding="16 8"
+                  Command="{Binding RetryCommand}"
+                  IsVisible="{Binding CanRetry}" />
+        </Grid>
+      </Border>
     </Grid>
+  </Grid>
 
 </Window>

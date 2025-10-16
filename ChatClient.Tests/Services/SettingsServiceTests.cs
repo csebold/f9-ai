@@ -34,7 +34,11 @@ public class SettingsServiceTests
             Projects =
             {
                 new ProjectSettings { Id = "project-1", Name = "Project One" }
-            }
+            },
+            EnableSessionPersistence = false,
+            MaxSessionsPerProject = 5,
+            MaxMessagesPerSession = 75,
+            ActiveSessions = { ["project-1"] = "session-9" }
         };
 
         await service.SaveAsync(settings);
@@ -45,6 +49,10 @@ public class SettingsServiceTests
         Assert.Equal("project-1", reloaded.ActiveProjectId);
         Assert.Single(reloaded.Projects);
         Assert.Equal("Project One", reloaded.Projects[0].Name);
+        Assert.False(reloaded.EnableSessionPersistence);
+        Assert.Equal(5, reloaded.MaxSessionsPerProject);
+        Assert.Equal(75, reloaded.MaxMessagesPerSession);
+        Assert.Equal("session-9", reloaded.ActiveSessions["project-1"]);
     }
 
     [Fact]
