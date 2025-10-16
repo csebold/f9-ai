@@ -5,11 +5,14 @@ using System.Collections.Specialized;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using ChatClient.Models;
 using ChatClient.Services;
 using ChatClient.ViewModels;
+using ChatClient.Utilities;
 
 namespace ChatClient.Views;
 
@@ -17,6 +20,7 @@ public partial class MainWindow : Window
 {
     private const string DefaultProjectName = "Default Project";
     private const string DefaultProjectKey = "default";
+    private const double AutoScrollThreshold = 32;
 
     private readonly ISettingsService _settingsService;
     private readonly IModelCatalogService _modelCatalogService;
@@ -27,6 +31,10 @@ public partial class MainWindow : Window
     private readonly ListBox _projectsList;
     private readonly ListBox _sessionsList;
     private readonly SemaphoreSlim _sessionSaveLock = new(1, 1);
+    private Grid? _conversationLayout;
+    private ScrollViewer? _conversationScrollViewer;
+    private bool _shouldAutoScroll = true;
+    private bool _pendingAutoScroll;
 
     private AppSettings _settings;
     private ProjectSettings? _activeProject;
@@ -69,9 +77,17 @@ public partial class MainWindow : Window
                         ?? throw new InvalidOperationException("Projects list control not found.");
         _sessionsList = this.FindControl<ListBox>("SessionsList")
                         ?? throw new InvalidOperationException("Sessions list control not found.");
+        _conversationLayout = this.FindControl<Grid>("ConversationLayout");
+        _conversationScrollViewer = this.FindControl<ScrollViewer>("ConversationScrollViewer");
 
         _projectsList.ItemsSource = _projectItems;
         _sessionsList.ItemsSource = _sessionItems;
+        if (_conversationScrollViewer is not null)
+        {
+            _conversationScrollViewer.ScrollChanged += OnConversationScrollChanged;
+        }
+
+        ScalingChanged += OnScalingChanged;
 
         DataContextChanged += OnDataContextChanged;
         Opened += OnOpened;
@@ -95,6 +111,7 @@ public partial class MainWindow : Window
         if (_viewModel is not null)
         {
             _viewModel.Messages.CollectionChanged += OnMessagesCollectionChanged;
+            ResetAutoScroll(requestScroll: true);
         }
     }
 
@@ -102,6 +119,32 @@ public partial class MainWindow : Window
     {
         Opened -= OnOpened;
         await InitializeAsync();
+        ApplyDensityScaling();
+    }
+
+    private void OnScalingChanged(object? sender, EventArgs e) => ApplyDensityScaling();
+
+    private void ApplyDensityScaling()
+    {
+        if (_conversationLayout is null)
+        {
+            return;
+        }
+
+        var classes = _conversationLayout.Classes;
+        classes.Remove("density-compact");
+        classes.Remove("density-comfortable");
+
+        var scaling = RenderScaling;
+
+        if (scaling >= 1.5)
+        {
+            classes.Add("density-comfortable");
+        }
+        else if (scaling <= 1.0)
+        {
+            classes.Add("density-compact");
+        }
     }
 
     private async void SettingsButton_OnClick(object? sender, RoutedEventArgs e)
@@ -321,6 +364,7 @@ public partial class MainWindow : Window
         _activeSession = activeSession;
         _suppressMessageSync = true;
         _viewModel.ResetMessages(activeSession.Messages, includeWelcomeWhenEmpty: true);
+        ResetAutoScroll(requestScroll: true);
         SyncSessionWithViewModel();
         _suppressMessageSync = false;
 
@@ -362,6 +406,7 @@ public partial class MainWindow : Window
 
         _suppressMessageSync = true;
         _viewModel.ResetMessages(session.Messages, includeWelcomeWhenEmpty: true);
+        ResetAutoScroll(requestScroll: true);
         SyncSessionWithViewModel();
         _suppressMessageSync = false;
 
@@ -497,6 +542,12 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (e.Action is NotifyCollectionChangedAction.Add or NotifyCollectionChangedAction.Reset)
+        {
+            var forceScroll = e.Action == NotifyCollectionChangedAction.Reset;
+            QueueScrollToBottom(forceScroll);
+        }
+
         SyncSessionWithViewModel();
 
         if (_activeSession is not null)
@@ -506,6 +557,110 @@ public partial class MainWindow : Window
         }
 
         _ = PersistSessionsAsync();
+    }
+
+    private void QueueScrollToBottom(bool force)
+    {
+        if (_conversationScrollViewer is null)
+        {
+            return;
+        }
+
+        if (!force && !_shouldAutoScroll)
+        {
+            _pendingAutoScroll = true;
+            return;
+        }
+
+        _pendingAutoScroll = false;
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_conversationScrollViewer is null)
+            {
+                return;
+            }
+
+            if (!force && !_shouldAutoScroll)
+            {
+                _pendingAutoScroll = true;
+                return;
+            }
+
+            var extentHeight = _conversationScrollViewer.Extent.Height;
+            var viewportHeight = _conversationScrollViewer.Viewport.Height;
+
+            if (double.IsNaN(extentHeight) || double.IsNaN(viewportHeight))
+            {
+                _pendingAutoScroll = true;
+                return;
+            }
+
+            var targetOffset = Math.Max(0, extentHeight - viewportHeight);
+            if (double.IsInfinity(targetOffset))
+            {
+                return;
+            }
+
+            var offset = _conversationScrollViewer.Offset;
+            if (Math.Abs(offset.Y - targetOffset) > 0.5)
+            {
+                _conversationScrollViewer.Offset = new Vector(offset.X, targetOffset);
+            }
+        }, DispatcherPriority.Background);
+    }
+
+    private void ResetAutoScroll(bool requestScroll)
+    {
+        _shouldAutoScroll = true;
+        _pendingAutoScroll = false;
+
+        if (requestScroll)
+        {
+            QueueScrollToBottom(force: true);
+        }
+    }
+
+    private void OnConversationScrollChanged(object? sender, ScrollChangedEventArgs e)
+    {
+        if (_conversationScrollViewer is null)
+        {
+            return;
+        }
+
+        if (IsNearBottom(_conversationScrollViewer))
+        {
+            _shouldAutoScroll = true;
+
+            if (_pendingAutoScroll)
+            {
+                QueueScrollToBottom(force: false);
+            }
+        }
+        else
+        {
+            _shouldAutoScroll = false;
+        }
+    }
+
+    private static bool IsNearBottom(ScrollViewer scroller)
+    {
+        var extentHeight = scroller.Extent.Height;
+        var viewportHeight = scroller.Viewport.Height;
+
+        if (double.IsNaN(extentHeight) || double.IsNaN(viewportHeight))
+        {
+            return true;
+        }
+
+        if (extentHeight <= viewportHeight)
+        {
+            return true;
+        }
+
+        var maxOffset = Math.Max(0, extentHeight - viewportHeight);
+        var delta = maxOffset - scroller.Offset.Y;
+        return delta <= AutoScrollThreshold;
     }
 
     private void SyncSessionWithViewModel()
@@ -765,6 +920,23 @@ public partial class MainWindow : Window
             .Id;
     }
 
+    protected override void OnClosed(EventArgs e)
+    {
+        base.OnClosed(e);
+
+        if (_viewModel is not null)
+        {
+            _viewModel.Messages.CollectionChanged -= OnMessagesCollectionChanged;
+        }
+
+        if (_conversationScrollViewer is not null)
+        {
+            _conversationScrollViewer.ScrollChanged -= OnConversationScrollChanged;
+        }
+
+        ScalingChanged -= OnScalingChanged;
+    }
+
     public sealed class ProjectListItem
     {
         public ProjectListItem(string projectKey, ProjectSettings? project, string displayName)
@@ -823,7 +995,7 @@ public partial class MainWindow : Window
         {
             Session = session ?? throw new ArgumentNullException(nameof(session));
             Title = string.IsNullOrWhiteSpace(session.Title) ? "New Chat" : session.Title;
-            Subtitle = session.UpdatedAt.ToLocalTime().ToString("g");
+            Subtitle = TimestampFormatter.GetSessionSubtitle(session.UpdatedAt);
         }
 
         public ChatSessionState Session { get; }

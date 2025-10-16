@@ -18,24 +18,22 @@
     <ResourceDictionary>
       <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Light">
-          <SolidColorBrush x:Key="ConversationPanelBackgroundBrush" Color="#FFF5F6F8" />
+          <SolidColorBrush x:Key="ConversationPanelBackgroundBrush" Color="#FFF0F2F5" />
           <SolidColorBrush x:Key="ComposerBackgroundBrush" Color="#FFFFFFFF" />
           <SolidColorBrush x:Key="AssistantMessageBackgroundBrush" Color="#FFFFFFFF" />
-          <SolidColorBrush x:Key="UserMessageBackgroundBrush" Color="#FFE1F0FF" />
-          <SolidColorBrush x:Key="SystemMessageBackgroundBrush" Color="#FFF0F2F5" />
-          <SolidColorBrush x:Key="MessageForegroundBrush" Color="#FF1F1F1F" />
-          <SolidColorBrush x:Key="AuthorForegroundBrush" Color="#FF4A4A4A" />
+          <SolidColorBrush x:Key="UserMessageBackgroundBrush" Color="#FFDAECFF" />
+          <SolidColorBrush x:Key="SystemMessageBackgroundBrush" Color="#FFEFF4F9" />
+          <SolidColorBrush x:Key="MessageForegroundBrush" Color="#FF121821" />
+          <SolidColorBrush x:Key="AuthorForegroundBrush" Color="#FF273447" />
+          <SolidColorBrush x:Key="TimestampForegroundBrush" Color="#FF44505F" />
+          <SolidColorBrush x:Key="MessageBorderBrush" Color="#FFD4DAE3" />
+          <Thickness x:Key="ConversationContainerPadding">12</Thickness>
+          <Thickness x:Key="ComposerContainerPadding">12 12 12 16</Thickness>
+          <Thickness x:Key="StatusContainerPadding">8 6 12 8</Thickness>
+          <Thickness x:Key="ConversationMessagePadding">12,8</Thickness>
+          <CornerRadius x:Key="ConversationMessageCornerRadius">8</CornerRadius>
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
-          <SolidColorBrush x:Key="ConversationPanelBackgroundBrush" Color="#FF1E1E1E" />
-          <SolidColorBrush x:Key="ComposerBackgroundBrush" Color="#FF262626" />
-          <SolidColorBrush x:Key="AssistantMessageBackgroundBrush" Color="#FF2B2B2B" />
-          <SolidColorBrush x:Key="UserMessageBackgroundBrush" Color="#FF0F3D63" />
-          <SolidColorBrush x:Key="SystemMessageBackgroundBrush" Color="#FF212833" />
-          <SolidColorBrush x:Key="MessageForegroundBrush" Color="#FFECECEC" />
-          <SolidColorBrush x:Key="AuthorForegroundBrush" Color="#FFB4C5FF" />
-        </ResourceDictionary>
-        <ResourceDictionary x:Key="Default">
           <SolidColorBrush x:Key="ConversationPanelBackgroundBrush" Color="#FF2B2B2B" />
           <SolidColorBrush x:Key="ComposerBackgroundBrush" Color="#FF2F2F2F" />
           <SolidColorBrush x:Key="AssistantMessageBackgroundBrush" Color="#FF2F2F2F" />
@@ -43,23 +41,61 @@
           <SolidColorBrush x:Key="SystemMessageBackgroundBrush" Color="#FF21313F" />
           <SolidColorBrush x:Key="MessageForegroundBrush" Color="#FFECECEC" />
           <SolidColorBrush x:Key="AuthorForegroundBrush" Color="#FFB4C5FF" />
+          <SolidColorBrush x:Key="TimestampForegroundBrush" Color="#FF8EA5C6" />
+          <SolidColorBrush x:Key="MessageBorderBrush" Color="#FF3A3F48" />
+          <Thickness x:Key="ConversationContainerPadding">12</Thickness>
+          <Thickness x:Key="ComposerContainerPadding">12 12 12 16</Thickness>
+          <Thickness x:Key="StatusContainerPadding">8 6 12 8</Thickness>
+          <Thickness x:Key="ConversationMessagePadding">12,8</Thickness>
+          <CornerRadius x:Key="ConversationMessageCornerRadius">8</CornerRadius>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Default">
+          <SolidColorBrush x:Key="ConversationPanelBackgroundBrush" Color="#FFF0F2F5" />
+          <SolidColorBrush x:Key="ComposerBackgroundBrush" Color="#FFFFFFFF" />
+          <SolidColorBrush x:Key="AssistantMessageBackgroundBrush" Color="#FFFFFFFF" />
+          <SolidColorBrush x:Key="UserMessageBackgroundBrush" Color="#FFDAECFF" />
+          <SolidColorBrush x:Key="SystemMessageBackgroundBrush" Color="#FFEFF4F9" />
+          <SolidColorBrush x:Key="MessageForegroundBrush" Color="#FF121821" />
+          <SolidColorBrush x:Key="AuthorForegroundBrush" Color="#FF273447" />
+          <SolidColorBrush x:Key="TimestampForegroundBrush" Color="#FF44505F" />
+          <SolidColorBrush x:Key="MessageBorderBrush" Color="#FFD4DAE3" />
+          <Thickness x:Key="ConversationContainerPadding">12</Thickness>
+          <Thickness x:Key="ComposerContainerPadding">12 12 12 16</Thickness>
+          <Thickness x:Key="StatusContainerPadding">8 6 12 8</Thickness>
+          <Thickness x:Key="ConversationMessagePadding">12,8</Thickness>
+          <CornerRadius x:Key="ConversationMessageCornerRadius">8</CornerRadius>
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
 
       <conv:HalfValueConverter x:Key="HalfValueConverter" />
       <conv:FractionValueConverter x:Key="TwoThirdsWidthConverter" Factor="0.66" />
-      <conv:MessageRoleToBrushConverter x:Key="MessageRoleToBrushConverter"
-                                        UserBrush="{StaticResource UserMessageBackgroundBrush}"
-                                        AssistantBrush="{StaticResource AssistantMessageBackgroundBrush}"
-                                        SystemBrush="{StaticResource SystemMessageBackgroundBrush}" />
+      <conv:MessageRoleToBrushConverter x:Key="MessageRoleToBrushConverter" />
       <conv:MessageRoleToHorizontalAlignmentConverter x:Key="MessageRoleToHorizontalAlignmentConverter" />
       <conv:MessageRoleToThicknessConverter x:Key="MessageRoleToMarginConverter" />
       <conv:MessageRoleToFontStyleConverter x:Key="MessageRoleToFontStyleConverter" />
       <conv:MessageRoleToTextAlignmentConverter x:Key="MessageRoleToTextAlignmentConverter" />
       <conv:StringNotEmptyToBoolConverter x:Key="StringNotEmptyToBoolConverter" />
       <conv:BooleanNegationConverter x:Key="BooleanNegationConverter" />
+      <conv:MessageTimestampDisplayConverter x:Key="MessageTimestampDisplayConverter" />
+      <conv:MessageTimestampTooltipConverter x:Key="MessageTimestampTooltipConverter" />
+
     </ResourceDictionary>
   </Window.Resources>
+
+  <Window.Styles>
+    <Style Selector="Grid#ConversationLayout">
+      <Setter Property="ColumnSpacing" Value="12" />
+      <Setter Property="RowSpacing" Value="12" />
+    </Style>
+    <Style Selector="Grid#ConversationLayout.density-comfortable">
+      <Setter Property="ColumnSpacing" Value="16" />
+      <Setter Property="RowSpacing" Value="16" />
+    </Style>
+    <Style Selector="Grid#ConversationLayout.density-compact">
+      <Setter Property="ColumnSpacing" Value="8" />
+      <Setter Property="RowSpacing" Value="8" />
+    </Style>
+  </Window.Styles>
 
   <Design.DataContext>
     <vm:MainWindowViewModel />
@@ -129,10 +165,10 @@
       </ScrollViewer>
     </Border>
 
-    <Grid Grid.Column="1"
+    <Grid x:Name="ConversationLayout"
+          Grid.Column="1"
           Margin="16"
-          RowDefinitions="Auto,*,Auto,Auto"
-          RowSpacing="12">
+          RowDefinitions="Auto,*,Auto,Auto">
       <Grid Grid.Row="0"
             ColumnDefinitions="*,Auto,Auto"
             ColumnSpacing="12">
@@ -176,8 +212,9 @@
       <Border Grid.Row="1"
               Background="{DynamicResource ConversationPanelBackgroundBrush}"
               CornerRadius="6"
-              Padding="12">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
+              Padding="{DynamicResource ConversationContainerPadding}">
+        <ScrollViewer x:Name="ConversationScrollViewer"
+                      VerticalScrollBarVisibility="Auto">
           <ItemsControl ItemsSource="{Binding Messages}">
               <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
@@ -187,8 +224,10 @@
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="model:Message">
                 <Border Margin="{Binding Role, Converter={StaticResource MessageRoleToMarginConverter}}"
-                        Padding="8"
-                        CornerRadius="6"
+                        Padding="{DynamicResource ConversationMessagePadding}"
+                        CornerRadius="{DynamicResource ConversationMessageCornerRadius}"
+                        BorderBrush="{DynamicResource MessageBorderBrush}"
+                        BorderThickness="1"
                         Background="{Binding Role, Converter={StaticResource MessageRoleToBrushConverter}}"
                         HorizontalAlignment="{Binding Role, Converter={StaticResource MessageRoleToHorizontalAlignmentConverter}}"
                         MaxWidth="{Binding Bounds.Width, RelativeSource={RelativeSource AncestorType=ScrollViewer}, Converter={StaticResource TwoThirdsWidthConverter}}">
@@ -203,6 +242,12 @@
                                FontStyle="{Binding Role, Converter={StaticResource MessageRoleToFontStyleConverter}}"
                                Foreground="{DynamicResource MessageForegroundBrush}"
                                TextAlignment="{Binding Role, Converter={StaticResource MessageRoleToTextAlignmentConverter}}" />
+                    <TextBlock Text="{Binding Timestamp, Converter={StaticResource MessageTimestampDisplayConverter}}"
+                               FontSize="11"
+                               Foreground="{DynamicResource TimestampForegroundBrush}"
+                               TextAlignment="{Binding Role, Converter={StaticResource MessageRoleToTextAlignmentConverter}}"
+                               ToolTip.Tip="{Binding Timestamp, Converter={StaticResource MessageTimestampTooltipConverter}}"
+                               Opacity="0.85" />
                   </StackPanel>
                 </Border>
               </DataTemplate>
@@ -214,7 +259,7 @@
       <Border Grid.Row="2"
               Background="{DynamicResource ComposerBackgroundBrush}"
               CornerRadius="6"
-              Padding="12 12 12 16">
+              Padding="{DynamicResource ComposerContainerPadding}">
         <Grid ColumnDefinitions="*,Auto"
               RowDefinitions="Auto,Auto"
               ColumnSpacing="12"
@@ -263,7 +308,7 @@
       <Border Grid.Row="3"
               Background="{DynamicResource ComposerBackgroundBrush}"
               CornerRadius="6"
-              Padding="8 6 12 8">
+              Padding="{DynamicResource StatusContainerPadding}">
         <Grid ColumnDefinitions="*,Auto"
               ColumnSpacing="12">
           <StackPanel Orientation="Vertical"

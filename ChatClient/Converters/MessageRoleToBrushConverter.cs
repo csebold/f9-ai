@@ -3,6 +3,7 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Data.Converters;
 using Avalonia.Media;
+using Avalonia.Styling;
 using ChatClient.Models;
 
 namespace ChatClient.Converters;
@@ -12,23 +13,30 @@ namespace ChatClient.Converters;
 /// </summary>
 public sealed class MessageRoleToBrushConverter : IValueConverter
 {
-    public IBrush? UserBrush { get; set; }
+    public string UserBrushKey { get; set; } = "UserMessageBackgroundBrush";
 
-    public IBrush? AssistantBrush { get; set; }
+    public string AssistantBrushKey { get; set; } = "AssistantMessageBackgroundBrush";
 
-    public IBrush? SystemBrush { get; set; }
+    public string SystemBrushKey { get; set; } = "SystemMessageBackgroundBrush";
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         if (value is MessageRole role)
         {
-            return role switch
+            var resourceKey = role switch
             {
-                MessageRole.User => UserBrush,
-                MessageRole.Assistant => AssistantBrush,
-                MessageRole.System => SystemBrush,
-                _ => SystemBrush
+                MessageRole.User => UserBrushKey,
+                MessageRole.Assistant => AssistantBrushKey,
+                MessageRole.System => SystemBrushKey,
+                _ => SystemBrushKey
             };
+
+            var theme = Application.Current?.ActualThemeVariant ?? ThemeVariant.Default;
+            if (Application.Current?.TryGetResource(resourceKey, theme, out var brush) == true &&
+                brush is IBrush typedBrush)
+            {
+                return typedBrush;
+            }
         }
 
         return AvaloniaProperty.UnsetValue;
