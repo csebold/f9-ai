@@ -89,10 +89,27 @@
         </ScrollViewer>
       </Border>
 
-      <TextBlock Text="Preparing systems..."
-                 FontSize="12"
-                 Foreground="#FF9EAAD6"
-                 HorizontalAlignment="Center"/>
+      <StackPanel Spacing="8" HorizontalAlignment="Center">
+        <TextBlock Text="Preparing systems..."
+                   FontSize="12"
+                   Foreground="#FF9EAAD6"
+                   HorizontalAlignment="Center"/>
+        <StackPanel Orientation="Horizontal"
+                    Spacing="8"
+                    HorizontalAlignment="Center"
+                    IsVisible="{Binding IsCancellationOffered}">
+          <TextBlock Text="{Binding CancellationMessage}"
+                     Foreground="#FFBAC2E6"
+                     FontSize="12"
+                     TextWrapping="Wrap"
+                     MaxWidth="220"
+                     VerticalAlignment="Center"/>
+          <Button Content="Cancel"
+                  Command="{Binding CancelCommand}"
+                  IsEnabled="{Binding IsCancelEnabled}"
+                  HorizontalAlignment="Center"/>
+        </StackPanel>
+      </StackPanel>
     </StackPanel>
   </Border>
 </Window>

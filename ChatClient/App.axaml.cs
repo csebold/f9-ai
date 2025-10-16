@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -18,7 +19,11 @@ public partial class App : Application
 {
     private ISettingsService _settingsService = null!;
     private IModelCatalogService _modelCatalogService = null!;
+    private IProjectWorkspaceService _projectWorkspaceService = null!;
     private AppSettings _settings = null!;
+    private IStartupInitializer _startupInitializer = null!;
+
+    private static readonly TimeSpan StartupTimeout = TimeSpan.FromSeconds(15);
 
     public override void Initialize()
     {
@@ -35,6 +40,8 @@ public partial class App : Application
 
             _settingsService = new SettingsService();
             _modelCatalogService = new ModelCatalogService();
+            _projectWorkspaceService = new ProjectWorkspaceService();
+            _startupInitializer = new StartupInitializer(_settingsService, _projectWorkspaceService);
 
             var splashViewModel = new SplashScreenViewModel();
             var splashWindow = new SplashWindow
@@ -71,37 +78,40 @@ public partial class App : Application
         void PostStatus(string message) =>
             Dispatcher.UIThread.Post(() => splashViewModel.AddStatus(message));
 
+        using var initializationCts = new CancellationTokenSource();
+        using var timeoutWatcherCts = new CancellationTokenSource();
+
+        void OnCancelRequested(object? sender, EventArgs e)
+        {
+            splashViewModel.MarkCancellationInProgress();
+            initializationCts.Cancel();
+        }
+
+        splashViewModel.CancelRequested += OnCancelRequested;
+
+        Task timeoutTask = Task.CompletedTask;
+
         try
         {
-            PostStatus("Loading user settings...");
-            _settings = await _settingsService.LoadAsync().ConfigureAwait(false);
+            var statusProgress = new Progress<string>(PostStatus);
+            var initializationTask = _startupInitializer.InitializeAsync(statusProgress, initializationCts.Token);
 
-            var settingsUpdated = false;
-            foreach (var project in _settings.Projects)
-            {
-                var previousPath = project.WorkspacePath;
-                ProjectWorkspace.EnsureWorkspace(project);
-                if (!string.Equals(previousPath, project.WorkspacePath, StringComparison.Ordinal))
-                {
-                    settingsUpdated = true;
-                }
-            }
+            timeoutTask = WatchForTimeoutAsync(initializationTask, splashViewModel, timeoutWatcherCts.Token, PostStatus);
 
-            var activeProject = ResolveActiveProject(_settings, ref settingsUpdated);
-            var providerForStatus = activeProject?.Provider ?? _settings.Provider;
-            var providerName = providerForStatus.ToString();
-            PostStatus($"Configuring provider: {providerName}...");
+            var initializationResult = await initializationTask.ConfigureAwait(false);
+            timeoutWatcherCts.Cancel();
 
-            if (settingsUpdated)
-            {
-                await _settingsService.SaveAsync(_settings).ConfigureAwait(false);
-            }
+            _settings = initializationResult.Settings;
+            var activeProject = initializationResult.ActiveProject;
 
+            PostStatus($"Configuring provider: {initializationResult.ProviderDisplayName}...");
             PostStatus("Checking MCP integrations (coming soon)...");
             PostStatus("Finalizing UI...");
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
+                splashViewModel.ClearCancellationOffer();
+
                 var mainWindowViewModel = new MainWindowViewModel();
                 var mainWindow = new MainWindow(_settingsService, _modelCatalogService, _settings, activeProject)
                 {
@@ -115,9 +125,22 @@ public partial class App : Application
                 splashWindow.Close();
             });
         }
+        catch (OperationCanceledException)
+        {
+            PostStatus("Startup cancelled by user.");
+            timeoutWatcherCts.Cancel();
+            await Task.Delay(1000, CancellationToken.None).ConfigureAwait(false);
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                splashWindow.Close();
+                desktop.Shutdown();
+            });
+        }
         catch (Exception ex)
         {
             PostStatus($"Startup failed: {ex.Message}");
+            timeoutWatcherCts.Cancel();
             await Task.Delay(2000).ConfigureAwait(false);
 
             await Dispatcher.UIThread.InvokeAsync(() =>
@@ -125,6 +148,20 @@ public partial class App : Application
                 splashWindow.Close();
                 desktop.Shutdown();
             });
+        }
+        finally
+        {
+            splashViewModel.CancelRequested -= OnCancelRequested;
+            timeoutWatcherCts.Cancel();
+
+            try
+            {
+                await timeoutTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Cancellation is expected when the initialization completed in time or the app is shutting down.
+            }
         }
     }
 
@@ -136,21 +173,27 @@ public partial class App : Application
         }
     }
 
-    private static ProjectSettings? ResolveActiveProject(AppSettings settings, ref bool settingsUpdated)
+    private Task WatchForTimeoutAsync(Task initializationTask, SplashScreenViewModel splashViewModel, CancellationToken token, Action<string> postStatus)
     {
-        ProjectSettings? activeProject = null;
-        if (!string.IsNullOrWhiteSpace(settings.ActiveProjectId))
+        return Task.Run(async () =>
         {
-            activeProject = settings.Projects.FirstOrDefault(p => string.Equals(p.Id, settings.ActiveProjectId, StringComparison.Ordinal));
-        }
+            try
+            {
+                await Task.Delay(StartupTimeout, token).ConfigureAwait(false);
 
-        if (activeProject is null && settings.Projects.Count > 0)
-        {
-            activeProject = settings.Projects[0];
-            settings.ActiveProjectId = activeProject.Id;
-            settingsUpdated = true;
-        }
-
-        return activeProject;
+                if (!initializationTask.IsCompleted)
+                {
+                    postStatus("Startup is taking longer than expected.");
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        splashViewModel.OfferCancellation("Initialization is taking longer than expected. You can cancel to exit.");
+                    });
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Ignore cancellation; it means initialization completed in time or shutdown was requested.
+            }
+        });
     }
 }

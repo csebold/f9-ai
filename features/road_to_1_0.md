@@ -40,6 +40,7 @@
 2. **Conversation Responsiveness**
    - Expose an `IsResponding` flag from the view-model and bind it to typing indicator visuals.
    - Disable send/input controls while requests are in-flight and surface a retry command on failure.
+   - Replace the "send" button with a "stop" button while requests are in-flight and put "send" back when the request is complete.
    - Surface provider latency and error summaries in the status bar for quick debugging.
 3. **Session Persistence**
    - Serialize the `ObservableCollection<Message>` to JSON via `System.Text.Json` with versioning.
