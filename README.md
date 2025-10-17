@@ -4,7 +4,7 @@ Cross-platform Avalonia desktop client that delivers a responsive chat experienc
 
 ## Quick Start
 
-- Install the .NET 9 SDK (`dotnet --list-sdks` should list 9.x).
+- Install the .NET 9.0.306 SDK (`dotnet --list-sdks` should list 9.0.306).
 - Restore and run the desktop client:
   ```bash
   dotnet restore

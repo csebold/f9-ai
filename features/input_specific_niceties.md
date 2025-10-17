@@ -1,6 +1,6 @@
 # Feature request: input niceties
 
-## Chat input
+## Chat input (Complete)
 
 - [x] hotkeys respect OS defaults (usually Emacs-style in text inputs for macOS)
    * example: `ctrl-a` goes to beginning of line in macOS but selects all in Windows

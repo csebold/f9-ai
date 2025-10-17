@@ -82,3 +82,4 @@
 - Extend the UI polish (assistant/user theming, auto-scroll, typing indicators) to improve readability.
 - Begin Milestone 4 work: persist conversation history locally and surface connection state (loading/error) to users.
 - Plan packaging requirements per platform in preparation for Milestone 5.
+  - [macOS and Windows packaging](https://avaloniaui.net/blog/the-definitive-guide-to-building-and-deploying-avalonia-applications-for-macos)
