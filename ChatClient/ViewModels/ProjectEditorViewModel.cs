@@ -25,6 +25,7 @@ public partial class ProjectEditorViewModel : ObservableObject
         CancelCommand = new RelayCommand(InvokeCancelled);
 
         Name = _workingCopy.Name;
+        Description = _workingCopy.Description;
         Instructions = _workingCopy.Instructions;
         ApiKey = _workingCopy.ApiKey ?? string.Empty;
         Model = _workingCopy.Model ?? string.Empty;
@@ -51,6 +52,9 @@ public partial class ProjectEditorViewModel : ObservableObject
     private string _name = string.Empty;
 
     [ObservableProperty]
+    private string _description = string.Empty;
+
+    [ObservableProperty]
     private string _instructions = string.Empty;
 
     [ObservableProperty]
@@ -75,6 +79,7 @@ public partial class ProjectEditorViewModel : ObservableObject
         }
 
         _workingCopy.Name = Name.Trim();
+        _workingCopy.Description = Description?.Trim() ?? string.Empty;
         _workingCopy.Instructions = Instructions?.Trim() ?? string.Empty;
         _workingCopy.Provider = SelectedProviderOption.Provider;
         _workingCopy.ApiKey = string.IsNullOrWhiteSpace(ApiKey) ? null : ApiKey.Trim();
@@ -130,6 +135,7 @@ public partial class ProjectEditorViewModel : ObservableObject
         {
             Id = source.Id,
             Name = source.Name,
+            Description = source.Description,
             Instructions = source.Instructions,
             WorkspacePath = source.WorkspacePath,
             Provider = source.Provider,

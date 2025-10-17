@@ -193,8 +193,8 @@
                      Foreground="{DynamicResource AuthorForegroundBrush}"
                      TextWrapping="Wrap"
                      MaxHeight="80"
-                     IsVisible="{Binding CurrentInstructions, Converter={StaticResource StringNotEmptyToBoolConverter}}"
-                     Text="{Binding CurrentInstructions}" />
+                     IsVisible="{Binding CurrentDescription, Converter={StaticResource StringNotEmptyToBoolConverter}}"
+                     Text="{Binding CurrentDescription}" />
         </StackPanel>
         <Button Grid.Column="1"
                 Content="Project Settings"

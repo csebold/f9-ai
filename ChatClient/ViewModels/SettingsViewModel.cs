@@ -348,6 +348,7 @@ public partial class SettingsViewModel : ObservableObject
         {
             Id = source.Id,
             Name = source.Name,
+            Description = source.Description,
             Instructions = source.Instructions,
             WorkspacePath = source.WorkspacePath,
             Provider = source.Provider,

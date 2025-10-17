@@ -225,7 +225,7 @@ public class MainWindowViewModelTests
         var initialCount = viewModel.Messages.Count;
 
         var newRegistration = CreateRegistration(new StubLlmClient("Second"), "ProviderB", "model-b", "Connected to ProviderB (model-b).");
-        viewModel.ChangeProject(newRegistration, "Project B", "Follow the rules.", hasCustomProject: true);
+        viewModel.ChangeProject(newRegistration, "Project B", "Follow the rules.", "Project overview.", hasCustomProject: true);
 
         Assert.Equal(initialCount + 1, viewModel.Messages.Count);
         var statusMessage = viewModel.Messages[^1];
@@ -236,6 +236,7 @@ public class MainWindowViewModelTests
         Assert.Equal("ProviderB", viewModel.CurrentProvider);
         Assert.Equal("model-b", viewModel.CurrentModel);
         Assert.Equal("Project B", viewModel.CurrentProjectName);
+        Assert.Equal("Project overview.", viewModel.CurrentDescription);
         Assert.True(viewModel.HasCustomProject);
         Assert.Equal("Ready - ProviderB (model-b)", viewModel.StatusMessage);
     }

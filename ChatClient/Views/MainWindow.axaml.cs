@@ -731,9 +731,10 @@ public partial class MainWindow : Window
 
         var projectName = project?.Name ?? DefaultProjectName;
         var instructions = project?.Instructions ?? string.Empty;
+        var description = project?.Description ?? string.Empty;
         var hasCustomProject = project is not null;
 
-        _viewModel.ChangeProject(registration, projectName, instructions, hasCustomProject, isUpdate, emitStatusMessage);
+        _viewModel.ChangeProject(registration, projectName, instructions, description, hasCustomProject, isUpdate, emitStatusMessage);
 
         RefreshProjectList();
         RefreshSessionsForProject(projectKey, activeSession.Id);
@@ -1191,6 +1192,7 @@ public partial class MainWindow : Window
     private static void CopyProjectSettings(ProjectSettings target, ProjectSettings source)
     {
         target.Name = source.Name;
+        target.Description = source.Description;
         target.Instructions = source.Instructions;
         target.Provider = source.Provider;
         target.ApiKey = source.ApiKey;

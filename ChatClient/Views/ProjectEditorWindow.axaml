@@ -17,6 +17,13 @@
       <TextBox Text="{Binding Name}"
                Watermark="My Project"/>
 
+      <TextBlock Text="Description" FontWeight="Bold"/>
+      <TextBox Text="{Binding Description}"
+               AcceptsReturn="True"
+               TextWrapping="Wrap"
+               MinHeight="80"
+               Watermark="Optional summary shown in chat..."/>
+
       <TextBlock Text="Instructions" FontWeight="Bold"/>
       <TextBox Text="{Binding Instructions}"
                AcceptsReturn="True"

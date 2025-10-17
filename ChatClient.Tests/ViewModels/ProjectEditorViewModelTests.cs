@@ -23,6 +23,7 @@ public class ProjectEditorViewModelTests
         viewModel.Saved += (_, result) => saved = result;
 
         viewModel.Name = "  Example Project  ";
+        viewModel.Description = "  quick summary  ";
         viewModel.Instructions = "  keep it short  ";
         viewModel.ApiKey = "  key-123  ";
         viewModel.Model = "  custom-model  ";
@@ -31,6 +32,7 @@ public class ProjectEditorViewModelTests
 
         Assert.NotNull(saved);
         Assert.Equal("Example Project", saved!.Name);
+        Assert.Equal("quick summary", saved.Description);
         Assert.Equal("keep it short", saved.Instructions);
         Assert.Equal("key-123", saved.ApiKey);
         Assert.Equal("custom-model", saved.Model);

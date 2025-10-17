@@ -37,6 +37,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private string _currentInstructions = string.Empty;
 
     [ObservableProperty]
+    private string _currentDescription = string.Empty;
+
+    [ObservableProperty]
     private bool _hasCustomProject;
 
     [ObservableProperty]
@@ -52,7 +55,13 @@ public partial class MainWindowViewModel : ViewModelBase
     private CancellationTokenSource? _responseCancellation;
     private string? _lastPrompt;
 
-    public MainWindowViewModel(LlmClientRegistration? registration = null, string? projectName = null, string? projectInstructions = null, bool hasCustomProject = false, IEnumerable<Message>? initialMessages = null)
+    public MainWindowViewModel(
+        LlmClientRegistration? registration = null,
+        string? projectName = null,
+        string? projectInstructions = null,
+        string? projectDescription = null,
+        bool hasCustomProject = false,
+        IEnumerable<Message>? initialMessages = null)
     {
         SendCommand = new AsyncRelayCommand(SendAsync, CanSendPrompt);
         StopCommand = new RelayCommand(StopRequest, CanStopRequest);
@@ -62,15 +71,16 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var name = string.IsNullOrWhiteSpace(projectName) ? DefaultProjectName : projectName.Trim();
         var instructions = projectInstructions?.Trim() ?? string.Empty;
+        var description = projectDescription?.Trim() ?? string.Empty;
 
         if (registration is null)
         {
             var fallbackRegistration = CreateFallbackRegistration("LLM provider not configured. Set LLM_PROVIDER and provider-specific API keys.");
-            ApplyContext(fallbackRegistration, name, instructions, hasCustomProject, isUpdate: false, emitStatusMessage: false);
+            ApplyContext(fallbackRegistration, name, instructions, description, hasCustomProject, isUpdate: false, emitStatusMessage: false);
         }
         else
         {
-            ApplyContext(registration, name, instructions, hasCustomProject, isUpdate: false, emitStatusMessage: true);
+            ApplyContext(registration, name, instructions, description, hasCustomProject, isUpdate: false, emitStatusMessage: true);
         }
     }
 
@@ -88,10 +98,11 @@ public partial class MainWindowViewModel : ViewModelBase
         LlmClientRegistration registration,
         string projectName,
         string instructions,
+        string description,
         bool hasCustomProject,
         bool isUpdate = true,
         bool emitStatusMessage = true) =>
-        ApplyContext(registration, projectName, instructions, hasCustomProject, isUpdate, emitStatusMessage);
+        ApplyContext(registration, projectName, instructions, description, hasCustomProject, isUpdate, emitStatusMessage);
 
     private LlmClientRegistration CreateFallbackRegistration(string message)
     {
@@ -225,7 +236,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private void ApplyContext(LlmClientRegistration registration, string projectName, string instructions, bool hasCustomProject, bool isUpdate, bool emitStatusMessage)
+    private void ApplyContext(LlmClientRegistration registration, string projectName, string instructions, string description, bool hasCustomProject, bool isUpdate, bool emitStatusMessage)
     {
         _registration = registration ?? throw new ArgumentNullException(nameof(registration));
         _llmClient = registration.Client;
@@ -234,6 +245,7 @@ public partial class MainWindowViewModel : ViewModelBase
             ? DefaultProjectName
             : projectName.Trim();
         CurrentInstructions = instructions?.Trim() ?? string.Empty;
+        CurrentDescription = description?.Trim() ?? string.Empty;
         HasCustomProject = hasCustomProject;
 
         StatusMessage = $"Ready - {registration.ProviderDisplayName} ({registration.ModelId})";

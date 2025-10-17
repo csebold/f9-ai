@@ -9,6 +9,8 @@ public sealed class ProjectSettings
 
     public string Name { get; set; } = "New Project";
 
+    public string Description { get; set; } = string.Empty;
+
     public string Instructions { get; set; } = string.Empty;
 
     public string? WorkspacePath { get; set; }
