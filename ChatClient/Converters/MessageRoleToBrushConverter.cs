@@ -19,10 +19,29 @@ public sealed class MessageRoleToBrushConverter : IValueConverter
 
     public string SystemBrushKey { get; set; } = "SystemMessageBackgroundBrush";
 
+    public IBrush? UserBrush { get; set; }
+
+    public IBrush? AssistantBrush { get; set; }
+
+    public IBrush? SystemBrush { get; set; }
+
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         if (value is MessageRole role)
         {
+            var configuredBrush = role switch
+            {
+                MessageRole.User => UserBrush,
+                MessageRole.Assistant => AssistantBrush,
+                MessageRole.System => SystemBrush,
+                _ => SystemBrush
+            };
+
+            if (configuredBrush is not null)
+            {
+                return configuredBrush;
+            }
+
             var resourceKey = role switch
             {
                 MessageRole.User => UserBrushKey,

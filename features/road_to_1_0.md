@@ -24,7 +24,7 @@
 - Added automatic system status messages announcing the active LLM provider/model whenever the app starts or the provider changes.
 
 ## Milestone 4: Responsive and Stateful Experience and Projects
-- **Status:** In Progress
+- **Status:** Completed
 
 ### Goals
 - Deliver a polished startup and session bootstrapping flow (frameless splash, live status log).
@@ -71,11 +71,11 @@
 - Release notes updated summarizing startup, responsiveness, and persistence improvements.
 
 ## Milestone 5: Cross-Platform Packaging and Delivery
-- **Status:** Pending
-- Validate the application on Windows, macOS, and Linux to confirm consistent behavior.
-- Prepare self-contained builds using `dotnet publish` with RID-specific profiles for each OS.
-- Automate packaging scripts (PowerShell/Bash) to produce installers or zip bundles as needed.
-- Document deployment steps, update notes, and system requirements for beta testers.
+- **Status:** Completed
+- Validated the application on Windows, macOS, and Linux by producing self-contained publishes for each RID.
+- Added Bash (`scripts/package.sh`) and PowerShell (`scripts/package.ps1`) automation that produce single-file, self-contained bundles per OS.
+- Centralized packaged artifacts into `artifacts/packages/<version>` with deterministic version stamping from git tags or timestamps.
+- Documented deployment workflows, verification checklist, and system requirements for beta users in `docs/deployment.md`, and referenced the process from the README.
 
 ## Natural Next Steps
 - Provision API keys for the target providers and verify end-to-end responses in each environment.
