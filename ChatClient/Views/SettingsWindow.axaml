@@ -57,6 +57,24 @@
 
       <Separator/>
 
+      <StackPanel Spacing="8">
+        <TextBlock Text="Chat Input"
+                   FontWeight="Bold"/>
+        <StackPanel Spacing="4">
+          <TextBlock Text="Send shortcut"/>
+          <ComboBox ItemsSource="{Binding SendActivationOptions}"
+                    SelectedItem="{Binding SelectedSendActivationOption}">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:SettingsViewModel+SendActivationOption">
+                <TextBlock Text="{Binding DisplayName}"/>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+        </StackPanel>
+      </StackPanel>
+
+      <Separator/>
+
       <StackPanel Spacing="12">
         <TextBlock Text="Session Persistence"
                    FontWeight="Bold"/>

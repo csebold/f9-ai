@@ -39,6 +39,7 @@ public partial class SettingsViewModel : ObservableObject
         });
 
         AvailableModels = new ObservableCollection<string>();
+        SendActivationOptions = new ObservableCollection<SendActivationOption>(CreateSendActivationOptions());
 
         OpenAiApiKey = _workingCopy.OpenAi.ApiKey;
         AnthropicApiKey = _workingCopy.Anthropic.ApiKey;
@@ -54,6 +55,11 @@ public partial class SettingsViewModel : ObservableObject
         }
 
         SelectedModel = _workingCopy.GetProviderSettings(CurrentProvider).Model;
+        SelectedSendActivationOption = SendActivationOptions.FirstOrDefault(option => option.Activation == _workingCopy.ChatInput.SendActivation);
+        if (SelectedSendActivationOption == default)
+        {
+            SelectedSendActivationOption = SendActivationOptions[0];
+        }
 
         FetchModelsCommand = new AsyncRelayCommand(FetchModelsAsync, CanFetchModels);
         SaveCommand = new AsyncRelayCommand(SaveAsync, CanSave);
@@ -67,6 +73,8 @@ public partial class SettingsViewModel : ObservableObject
     public ObservableCollection<ProviderOption> Providers { get; }
 
     public ObservableCollection<string> AvailableModels { get; }
+
+    public ObservableCollection<SendActivationOption> SendActivationOptions { get; }
 
     public event EventHandler<AppSettings>? Saved;
 
@@ -101,6 +109,9 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private double _maxMessagesPerSession;
+
+    [ObservableProperty]
+    private SendActivationOption _selectedSendActivationOption;
 
     public IAsyncRelayCommand FetchModelsCommand { get; }
 
@@ -194,6 +205,7 @@ public partial class SettingsViewModel : ObservableObject
             _workingCopy.EnableSessionPersistence = EnableSessionPersistence;
             _workingCopy.MaxSessionsPerProject = NormalizeLimit(MaxSessionsPerProject);
             _workingCopy.MaxMessagesPerSession = NormalizeLimit(MaxMessagesPerSession);
+            _workingCopy.ChatInput.SendActivation = SelectedSendActivationOption.Activation;
 
             await _settingsService.SaveAsync(_workingCopy, CancellationToken.None);
             StatusMessage = "Settings saved.";
@@ -282,6 +294,19 @@ public partial class SettingsViewModel : ObservableObject
         return Math.Max(1, rounded);
     }
 
+    private static IReadOnlyList<SendActivationOption> CreateSendActivationOptions()
+    {
+        return new[]
+        {
+            new SendActivationOption(ChatSendActivation.Enter, "Enter"),
+            new SendActivationOption(ChatSendActivation.ShiftEnter, "Shift + Enter"),
+            new SendActivationOption(ChatSendActivation.ControlEnter, "Ctrl + Enter"),
+            new SendActivationOption(ChatSendActivation.CommandEnter, "Command + Enter")
+        };
+    }
+
+    public readonly record struct SendActivationOption(ChatSendActivation Activation, string DisplayName);
+
     private static AppSettings Clone(AppSettings source)
     {
         return new AppSettings
@@ -309,7 +334,11 @@ public partial class SettingsViewModel : ObservableObject
             MaxMessagesPerSession = source.MaxMessagesPerSession,
             ActiveSessions = source.ActiveSessions?.Count > 0
                 ? new Dictionary<string, string>(source.ActiveSessions, StringComparer.Ordinal)
-                : new Dictionary<string, string>(StringComparer.Ordinal)
+                : new Dictionary<string, string>(StringComparer.Ordinal),
+            ChatInput = new ChatInputSettings
+            {
+                SendActivation = source.ChatInput?.SendActivation ?? ChatSendActivation.Enter
+            }
         };
     }
 
@@ -354,6 +383,17 @@ public partial class SettingsViewModel : ObservableObject
 
         var providerSettings = _workingCopy.GetProviderSettings(CurrentProvider);
         providerSettings.Model = value ?? string.Empty;
+        SaveCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnSelectedSendActivationOptionChanged(SendActivationOption value)
+    {
+        if (!_isInitialized)
+        {
+            return;
+        }
+
+        _workingCopy.ChatInput.SendActivation = value.Activation;
         SaveCommand.NotifyCanExecuteChanged();
     }
 

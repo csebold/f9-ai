@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using ChatClient.Models;
@@ -33,6 +34,7 @@ public partial class MainWindow : Window
     private readonly SemaphoreSlim _sessionSaveLock = new(1, 1);
     private Grid? _conversationLayout;
     private ScrollViewer? _conversationScrollViewer;
+    private TextBox? _composerTextBox;
     private bool _shouldAutoScroll = true;
     private bool _pendingAutoScroll;
 
@@ -79,6 +81,8 @@ public partial class MainWindow : Window
                         ?? throw new InvalidOperationException("Sessions list control not found.");
         _conversationLayout = this.FindControl<Grid>("ConversationLayout");
         _conversationScrollViewer = this.FindControl<ScrollViewer>("ConversationScrollViewer");
+        _composerTextBox = this.FindControl<TextBox>("ComposerTextBox")
+                           ?? throw new InvalidOperationException("Composer text box not found.");
 
         _projectsList.ItemsSource = _projectItems;
         _sessionsList.ItemsSource = _sessionItems;
@@ -86,6 +90,8 @@ public partial class MainWindow : Window
         {
             _conversationScrollViewer.ScrollChanged += OnConversationScrollChanged;
         }
+
+        _composerTextBox.AddHandler(InputElement.KeyDownEvent, ComposerTextBox_OnKeyDown, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
 
         ScalingChanged += OnScalingChanged;
 
@@ -145,6 +151,361 @@ public partial class MainWindow : Window
         {
             classes.Add("density-compact");
         }
+    }
+
+    private void ComposerTextBox_OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Handled)
+        {
+            return;
+        }
+
+        if (_viewModel is null || sender is not TextBox textBox)
+        {
+            return;
+        }
+
+        if (TryHandleMacEditingShortcut(textBox, e))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (!IsEnterKey(e.Key))
+        {
+            return;
+        }
+
+        if (!TryHandleSendKey(textBox, e))
+        {
+            return;
+        }
+
+        e.Handled = true;
+    }
+
+    private bool TryHandleSendKey(TextBox textBox, KeyEventArgs e)
+    {
+        var activation = _settings.ChatInput?.SendActivation ?? ChatSendActivation.Enter;
+        var modifiers = NormalizeModifiers(e.KeyModifiers);
+
+        if (activation == ChatSendActivation.Enter)
+        {
+            if (modifiers == KeyModifiers.None && ShouldSendOnPlainEnter(textBox))
+            {
+                return TryExecuteSendCommand();
+            }
+
+            if (OperatingSystem.IsMacOS())
+            {
+                if (MatchesExplicitActivation(modifiers, ChatSendActivation.CommandEnter))
+                {
+                    return TryExecuteSendCommand();
+                }
+            }
+            else
+            {
+                if (MatchesExplicitActivation(modifiers, ChatSendActivation.ControlEnter))
+                {
+                    return TryExecuteSendCommand();
+                }
+            }
+
+            return false;
+        }
+
+        if (!MatchesExplicitActivation(modifiers, activation))
+        {
+            return false;
+        }
+
+        return TryExecuteSendCommand();
+    }
+
+    private bool TryExecuteSendCommand()
+    {
+        if (_viewModel is null)
+        {
+            return false;
+        }
+
+        if (!_viewModel.SendCommand.CanExecute(null))
+        {
+            return false;
+        }
+
+        _ = _viewModel.SendCommand.ExecuteAsync(null);
+        return true;
+    }
+
+    private static bool ShouldSendOnPlainEnter(TextBox textBox)
+    {
+        var text = textBox.Text ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        if (text.IndexOf('\n') >= 0 || text.IndexOf('\r') >= 0)
+        {
+            return false;
+        }
+
+        return !LooksLikeSingleLineMarkdown(text);
+    }
+
+    private static bool LooksLikeSingleLineMarkdown(string text)
+    {
+        var trimmed = text.TrimStart();
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
+        var first = trimmed[0];
+        if (first == '#' || first == '*' || first == '-')
+        {
+            return true;
+        }
+
+        var index = 0;
+        while (index < trimmed.Length && char.IsDigit(trimmed[index]))
+        {
+            index++;
+        }
+
+        if (index > 0 && index < trimmed.Length && (trimmed[index] == '.' || trimmed[index] == ')'))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool MatchesExplicitActivation(KeyModifiers modifiers, ChatSendActivation activation)
+    {
+        return activation switch
+        {
+            ChatSendActivation.ShiftEnter => modifiers.HasFlag(KeyModifiers.Shift),
+            ChatSendActivation.ControlEnter => modifiers.HasFlag(KeyModifiers.Control),
+            ChatSendActivation.CommandEnter => OperatingSystem.IsMacOS()
+                ? modifiers.HasFlag(KeyModifiers.Meta)
+                : modifiers.HasFlag(KeyModifiers.Control),
+            ChatSendActivation.Enter => modifiers == KeyModifiers.None,
+            _ => false
+        };
+    }
+
+    private static bool IsEnterKey(Key key) =>
+        key == Key.Enter || key == Key.Return;
+
+    private static KeyModifiers NormalizeModifiers(KeyModifiers modifiers) => modifiers;
+
+    private static bool TryHandleMacEditingShortcut(TextBox textBox, KeyEventArgs e)
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return false;
+        }
+
+        var modifiers = NormalizeModifiers(e.KeyModifiers);
+        if (modifiers != KeyModifiers.Control)
+        {
+            return false;
+        }
+
+        var text = textBox.Text ?? string.Empty;
+        var caret = Math.Clamp(textBox.CaretIndex, 0, text.Length);
+        var lineStart = GetLineStart(text, caret);
+        var lineEnd = GetLineEnd(text, caret);
+
+        switch (e.Key)
+        {
+            case Key.A:
+                MoveCaret(textBox, lineStart);
+                return true;
+            case Key.E:
+                MoveCaret(textBox, lineEnd);
+                return true;
+            case Key.K:
+                if (lineEnd > caret)
+                {
+                    textBox.SelectionStart = caret;
+                    textBox.SelectionEnd = lineEnd;
+                    textBox.SelectedText = string.Empty;
+                }
+                else
+                {
+                    var newlineLength = GetNewLineLength(text, lineEnd);
+                    if (newlineLength > 0)
+                    {
+                        textBox.SelectionStart = caret;
+                        textBox.SelectionEnd = Math.Min(text.Length, lineEnd + newlineLength);
+                        textBox.SelectedText = string.Empty;
+                    }
+                }
+
+                return true;
+            case Key.F:
+                if (caret < text.Length)
+                {
+                    MoveCaret(textBox, caret + 1);
+                }
+
+                return true;
+            case Key.B:
+                if (caret > 0)
+                {
+                    MoveCaret(textBox, caret - 1);
+                }
+
+                return true;
+            case Key.N:
+            {
+                var nextLineStart = GetNextLineStart(text, lineEnd);
+                if (nextLineStart > text.Length - 1)
+                {
+                    return true;
+                }
+
+                var nextLineEnd = GetLineEnd(text, nextLineStart);
+                var column = caret - lineStart;
+                var target = nextLineStart + Math.Min(column, nextLineEnd - nextLineStart);
+                MoveCaret(textBox, target);
+                return true;
+            }
+            case Key.P:
+            {
+                var previousLineStart = GetPreviousLineStart(text, lineStart);
+                if (previousLineStart < 0)
+                {
+                    return true;
+                }
+
+                var previousLineEnd = GetLineEnd(text, previousLineStart);
+                var column = caret - lineStart;
+                var target = previousLineStart + Math.Min(column, previousLineEnd - previousLineStart);
+                MoveCaret(textBox, target);
+                return true;
+            }
+            case Key.D:
+                if (caret < text.Length)
+                {
+                    textBox.SelectionStart = caret;
+                    textBox.SelectionEnd = Math.Min(text.Length, caret + 1);
+                    textBox.SelectedText = string.Empty;
+                }
+
+                return true;
+            case Key.H:
+                if (caret > 0)
+                {
+                    textBox.SelectionStart = caret - 1;
+                    textBox.SelectionEnd = caret;
+                    textBox.SelectedText = string.Empty;
+                }
+
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static void MoveCaret(TextBox textBox, int index)
+    {
+        var bounded = Math.Clamp(index, 0, textBox.Text?.Length ?? 0);
+        textBox.SelectionStart = bounded;
+        textBox.SelectionEnd = bounded;
+        textBox.CaretIndex = bounded;
+    }
+
+    private static int GetLineStart(string text, int index)
+    {
+        var position = Math.Clamp(index, 0, text.Length);
+        while (position > 0)
+        {
+            var ch = text[position - 1];
+            if (ch == '\n' || ch == '\r')
+            {
+                break;
+            }
+
+            position--;
+        }
+
+        return position;
+    }
+
+    private static int GetLineEnd(string text, int index)
+    {
+        var position = Math.Clamp(index, 0, text.Length);
+        while (position < text.Length)
+        {
+            var ch = text[position];
+            if (ch == '\n' || ch == '\r')
+            {
+                break;
+            }
+
+            position++;
+        }
+
+        return position;
+    }
+
+    private static int GetNextLineStart(string text, int lineEnd)
+    {
+        var position = Math.Clamp(lineEnd, 0, text.Length);
+        while (position < text.Length && (text[position] == '\n' || text[position] == '\r'))
+        {
+            position++;
+        }
+
+        return position;
+    }
+
+    private static int GetPreviousLineStart(string text, int currentLineStart)
+    {
+        var position = Math.Clamp(currentLineStart, 0, text.Length);
+        if (position == 0)
+        {
+            return -1;
+        }
+
+        position--;
+
+        while (position >= 0 && (text[position] == '\n' || text[position] == '\r'))
+        {
+            position--;
+        }
+
+        if (position < 0)
+        {
+            return 0;
+        }
+
+        return GetLineStart(text, position + 1);
+    }
+
+    private static int GetNewLineLength(string text, int lineEnd)
+    {
+        if (lineEnd >= text.Length)
+        {
+            return 0;
+        }
+
+        if (text[lineEnd] == '\r')
+        {
+            var length = 1;
+            if (lineEnd + 1 < text.Length && text[lineEnd + 1] == '\n')
+            {
+                length++;
+            }
+
+            return length;
+        }
+
+        return text[lineEnd] == '\n' ? 1 : 0;
     }
 
     private async void SettingsButton_OnClick(object? sender, RoutedEventArgs e)

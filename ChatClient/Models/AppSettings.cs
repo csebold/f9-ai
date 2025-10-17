@@ -25,6 +25,8 @@ public sealed class AppSettings
 
     public Dictionary<string, string> ActiveSessions { get; set; } = new();
 
+    public ChatInputSettings ChatInput { get; set; } = new();
+
     public ProviderSettings GetProviderSettings(LlmProvider provider) =>
         provider switch
         {
@@ -40,4 +42,17 @@ public sealed class ProviderSettings
     public string ApiKey { get; set; } = string.Empty;
 
     public string Model { get; set; } = string.Empty;
+}
+
+public sealed class ChatInputSettings
+{
+    public ChatSendActivation SendActivation { get; set; } = ChatSendActivation.Enter;
+}
+
+public enum ChatSendActivation
+{
+    Enter,
+    ShiftEnter,
+    ControlEnter,
+    CommandEnter
 }

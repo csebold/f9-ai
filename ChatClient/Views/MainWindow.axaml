@@ -279,7 +279,8 @@
                        VerticalAlignment="Center" />
           </StackPanel>
 
-          <TextBox Grid.Row="1"
+          <TextBox x:Name="ComposerTextBox"
+                   Grid.Row="1"
                    Grid.Column="0"
                    Text="{Binding Prompt, UpdateSourceTrigger=PropertyChanged}"
                    TextWrapping="Wrap"
