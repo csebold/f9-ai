@@ -26,7 +26,15 @@ public partial class App : Application
     private AppSettings _settings = null!;
     private IStartupInitializer _startupInitializer = null!;
 
-    private static readonly TimeSpan StartupTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan DefaultStartupTimeout = TimeSpan.FromSeconds(15);
+    private static TimeSpan? _startupTimeoutOverride;
+    private static Func<Action, Task> _uiInvokeAsync = action =>
+    {
+        var operation = Dispatcher.UIThread.InvokeAsync(action);
+        return operation.GetTask();
+    };
+
+    private static TimeSpan GetStartupTimeout() => _startupTimeoutOverride ?? DefaultStartupTimeout;
 
     public override void Initialize()
     {
@@ -218,15 +226,15 @@ public partial class App : Application
         {
             try
             {
-                await Task.Delay(StartupTimeout, token).ConfigureAwait(false);
+                await Task.Delay(GetStartupTimeout(), token).ConfigureAwait(false);
 
                 if (!initializationTask.IsCompleted)
                 {
                     postStatus("Startup is taking longer than expected.");
-                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    await _uiInvokeAsync(() =>
                     {
                         splashViewModel.OfferCancellation("Initialization is taking longer than expected. You can cancel to exit.");
-                    });
+                    }).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException)

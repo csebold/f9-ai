@@ -5,8 +5,16 @@ namespace ChatClient.Services;
 
 public static class AppPaths
 {
+    private static string? _baseDirectoryOverride;
+
     public static string GetBaseDirectory()
     {
+        if (!string.IsNullOrWhiteSpace(_baseDirectoryOverride))
+        {
+            Directory.CreateDirectory(_baseDirectoryOverride);
+            return _baseDirectoryOverride;
+        }
+
         var directory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (string.IsNullOrWhiteSpace(directory))
         {
@@ -61,5 +69,29 @@ public static class AppPaths
     {
         var baseDirectory = GetBaseDirectory();
         return Path.Combine(baseDirectory, "ollama-processes.json");
+    }
+
+    internal static IDisposable OverrideBaseDirectoryForTesting(string directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            throw new ArgumentException("Override directory must be provided.", nameof(directory));
+        }
+
+        var previous = _baseDirectoryOverride;
+        _baseDirectoryOverride = directory;
+        return new OverrideScope(() => _baseDirectoryOverride = previous);
+    }
+
+    private sealed class OverrideScope : IDisposable
+    {
+        private readonly Action _onDispose;
+
+        public OverrideScope(Action onDispose)
+        {
+            _onDispose = onDispose ?? throw new ArgumentNullException(nameof(onDispose));
+        }
+
+        public void Dispose() => _onDispose();
     }
 }
