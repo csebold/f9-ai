@@ -37,10 +37,7 @@ Cross-platform Avalonia desktop client that delivers a responsive chat experienc
 ## Versioning
 
 - The official application version lives in the top-level `VERSION` file. Packaging scripts, MSBuild, and manifests consume this value.
-- A helper hook will automatically bump the patch number on every commit. Opt in via:
-  ```bash
-  git config core.hooksPath scripts/hooks
-  ```
+- Running `dotnet restore`, `dotnet build`, or `dotnet test` will now auto-configure Git to use the bundled pre-commit hook so each commit bumps the patch number. If you need to wire it up manually, run `git config core.hooksPath scripts/hooks`.
 - You can skip the automatic bump for a commit by setting `SKIP_VERSION_BUMP=1` in your environment before committing.
 - To bump manually (for CI or custom workflows), run `./scripts/bump-version.sh`.
 

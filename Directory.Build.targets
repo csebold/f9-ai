@@ -1,0 +1,35 @@
+<Project InitialTargets="EnsureGitHooks">
+  <Target Name="EnsureGitHooks">
+    <Exec Command="git rev-parse --is-inside-work-tree"
+          ConsoleToMSBuild="true"
+          IgnoreExitCode="true"
+          StandardOutputImportance="Low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="IsInsideWorkTreeRaw" />
+    </Exec>
+
+    <PropertyGroup>
+      <IsInsideWorkTree>$([System.String]::Copy('$(IsInsideWorkTreeRaw)').Trim())</IsInsideWorkTree>
+    </PropertyGroup>
+
+    <Exec Command="git config --local --get core.hooksPath"
+          ConsoleToMSBuild="true"
+          IgnoreExitCode="true"
+          Condition="'$(IsInsideWorkTree)' == 'true'"
+          StandardOutputImportance="Low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="ConfiguredHooksPathRaw" />
+    </Exec>
+
+    <PropertyGroup>
+      <ConfiguredHooksPath>$([System.String]::Copy('$(ConfiguredHooksPathRaw)').Trim())</ConfiguredHooksPath>
+    </PropertyGroup>
+
+    <Message Text="Configuring git hooks path to 'scripts/hooks' so commits auto-bump the version."
+             Condition="'$(IsInsideWorkTree)' == 'true' and '$(ConfiguredHooksPath)' == ''"
+             Importance="High" />
+
+    <Exec Command="git config core.hooksPath scripts/hooks"
+          Condition="'$(IsInsideWorkTree)' == 'true' and '$(ConfiguredHooksPath)' == ''"
+          StandardOutputImportance="Low"
+          StandardErrorImportance="Low" />
+  </Target>
+</Project>
