@@ -13,6 +13,8 @@ namespace ChatClient.ViewModels;
 
 public partial class SettingsViewModel : ObservableObject
 {
+    private const string DefaultOllamaEndpoint = "http://localhost:11434/";
+
     private readonly ISettingsService _settingsService;
     private readonly IModelCatalogService _modelCatalogService;
     private readonly ISessionPersistenceService _sessionPersistenceService;
@@ -35,7 +37,8 @@ public partial class SettingsViewModel : ObservableObject
         {
             new ProviderOption(LlmProvider.OpenAi, "OpenAI"),
             new ProviderOption(LlmProvider.Anthropic, "Anthropic"),
-            new ProviderOption(LlmProvider.OpenRouter, "OpenRouter")
+            new ProviderOption(LlmProvider.OpenRouter, "OpenRouter"),
+            new ProviderOption(LlmProvider.Ollama, "Ollama")
         });
 
         AvailableModels = new ObservableCollection<string>();
@@ -44,6 +47,12 @@ public partial class SettingsViewModel : ObservableObject
         OpenAiApiKey = _workingCopy.OpenAi.ApiKey;
         AnthropicApiKey = _workingCopy.Anthropic.ApiKey;
         OpenRouterApiKey = _workingCopy.OpenRouter.ApiKey;
+        if (string.IsNullOrWhiteSpace(_workingCopy.Ollama.Endpoint))
+        {
+            _workingCopy.Ollama.Endpoint = DefaultOllamaEndpoint;
+        }
+
+        OllamaEndpoint = _workingCopy.Ollama.Endpoint;
         EnableSessionPersistence = _workingCopy.EnableSessionPersistence;
         MaxSessionsPerProject = Math.Max(1, _workingCopy.MaxSessionsPerProject);
         MaxMessagesPerSession = Math.Max(1, _workingCopy.MaxMessagesPerSession);
@@ -96,6 +105,9 @@ public partial class SettingsViewModel : ObservableObject
     private string _openRouterApiKey = string.Empty;
 
     [ObservableProperty]
+    private string _ollamaEndpoint = string.Empty;
+
+    [ObservableProperty]
     private bool _isBusy;
 
     [ObservableProperty]
@@ -123,7 +135,19 @@ public partial class SettingsViewModel : ObservableObject
 
     private LlmProvider CurrentProvider => SelectedProviderOption.Provider;
 
-    private bool CanFetchModels() => !IsBusy && !string.IsNullOrWhiteSpace(GetApiKeyForProvider(CurrentProvider));
+    private bool CanFetchModels()
+    {
+        if (IsBusy)
+        {
+            return false;
+        }
+
+        return CurrentProvider switch
+        {
+            LlmProvider.Ollama => !string.IsNullOrWhiteSpace(OllamaEndpoint),
+            _ => !string.IsNullOrWhiteSpace(GetApiKeyForProvider(CurrentProvider))
+        };
+    }
 
     private bool CanSave()
     {
@@ -132,8 +156,16 @@ public partial class SettingsViewModel : ObservableObject
             return false;
         }
 
-        var apiKey = GetApiKeyForProvider(CurrentProvider);
-        if (string.IsNullOrWhiteSpace(apiKey))
+        var requiresCredentials = CurrentProvider != LlmProvider.Ollama;
+        if (requiresCredentials)
+        {
+            var apiKey = GetApiKeyForProvider(CurrentProvider);
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                return false;
+            }
+        }
+        else if (string.IsNullOrWhiteSpace(OllamaEndpoint))
         {
             return false;
         }
@@ -150,8 +182,8 @@ public partial class SettingsViewModel : ObservableObject
             IsBusy = true;
             StatusMessage = $"Loading models for {GetProviderDisplayName(CurrentProvider)}...";
 
-            var apiKey = GetApiKeyForProvider(CurrentProvider);
-            var models = await _modelCatalogService.GetModelsAsync(CurrentProvider, apiKey, CancellationToken.None);
+            var providerSettings = CreateProviderSettingsSnapshot(CurrentProvider);
+            var models = await _modelCatalogService.GetModelsAsync(CurrentProvider, providerSettings, CancellationToken.None);
             _modelCache[CurrentProvider] = models;
 
             UpdateAvailableModels(models, _workingCopy.GetProviderSettings(CurrentProvider).Model);
@@ -202,6 +234,12 @@ public partial class SettingsViewModel : ObservableObject
             _workingCopy.Provider = CurrentProvider;
             var providerSettings = _workingCopy.GetProviderSettings(CurrentProvider);
             providerSettings.Model = SelectedModel ?? string.Empty;
+            if (CurrentProvider == LlmProvider.Ollama)
+            {
+                providerSettings.Endpoint = string.IsNullOrWhiteSpace(OllamaEndpoint)
+                    ? DefaultOllamaEndpoint
+                    : OllamaEndpoint.Trim();
+            }
             _workingCopy.EnableSessionPersistence = EnableSessionPersistence;
             _workingCopy.MaxSessionsPerProject = NormalizeLimit(MaxSessionsPerProject);
             _workingCopy.MaxMessagesPerSession = NormalizeLimit(MaxMessagesPerSession);
@@ -224,11 +262,25 @@ public partial class SettingsViewModel : ObservableObject
 
     private void InvokeCancelled() => Cancelled?.Invoke(this, EventArgs.Empty);
 
+    private ProviderSettings CreateProviderSettingsSnapshot(LlmProvider provider)
+    {
+        var working = _workingCopy.GetProviderSettings(provider);
+        return new ProviderSettings
+        {
+            ApiKey = (GetApiKeyForProvider(provider) ?? string.Empty).Trim(),
+            Model = working.Model ?? string.Empty,
+            Endpoint = provider == LlmProvider.Ollama
+                ? (OllamaEndpoint ?? string.Empty).Trim()
+                : working.Endpoint ?? string.Empty
+        };
+    }
+
     private string GetApiKeyForProvider(LlmProvider provider) =>
         provider switch
         {
             LlmProvider.Anthropic => AnthropicApiKey,
             LlmProvider.OpenRouter => OpenRouterApiKey,
+            LlmProvider.Ollama => string.Empty,
             _ => OpenAiApiKey
         };
 
@@ -280,6 +332,7 @@ public partial class SettingsViewModel : ObservableObject
         {
             LlmProvider.Anthropic => "Anthropic",
             LlmProvider.OpenRouter => "OpenRouter",
+            LlmProvider.Ollama => "Ollama",
             _ => "OpenAI"
         };
 
@@ -315,17 +368,26 @@ public partial class SettingsViewModel : ObservableObject
             OpenAi = new ProviderSettings
             {
                 ApiKey = source.OpenAi.ApiKey,
-                Model = source.OpenAi.Model
+                Model = source.OpenAi.Model,
+                Endpoint = source.OpenAi.Endpoint
             },
             Anthropic = new ProviderSettings
             {
                 ApiKey = source.Anthropic.ApiKey,
-                Model = source.Anthropic.Model
+                Model = source.Anthropic.Model,
+                Endpoint = source.Anthropic.Endpoint
             },
             OpenRouter = new ProviderSettings
             {
                 ApiKey = source.OpenRouter.ApiKey,
-                Model = source.OpenRouter.Model
+                Model = source.OpenRouter.Model,
+                Endpoint = source.OpenRouter.Endpoint
+            },
+            Ollama = new ProviderSettings
+            {
+                ApiKey = source.Ollama.ApiKey,
+                Model = source.Ollama.Model,
+                Endpoint = source.Ollama.Endpoint
             },
             ActiveProjectId = source.ActiveProjectId,
             Projects = source.Projects.Select(CloneProject).ToList(),
@@ -354,6 +416,7 @@ public partial class SettingsViewModel : ObservableObject
             Provider = source.Provider,
             ApiKey = source.ApiKey,
             Model = source.Model,
+            Endpoint = source.Endpoint,
             ThemeId = source.ThemeId,
             FontFamily = source.FontFamily
         };
@@ -430,6 +493,18 @@ public partial class SettingsViewModel : ObservableObject
         }
 
         _workingCopy.OpenRouter.ApiKey = value ?? string.Empty;
+        FetchModelsCommand.NotifyCanExecuteChanged();
+        SaveCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnOllamaEndpointChanged(string value)
+    {
+        if (!_isInitialized)
+        {
+            return;
+        }
+
+        _workingCopy.Ollama.Endpoint = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
         FetchModelsCommand.NotifyCanExecuteChanged();
         SaveCommand.NotifyCanExecuteChanged();
     }

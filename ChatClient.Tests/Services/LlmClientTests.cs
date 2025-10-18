@@ -160,6 +160,57 @@ public class LlmClientTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => client.GetResponseAsync("prompt"));
     }
 
+    [Fact]
+    public async Task OllamaClient_SendsExpectedPayload()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.Equal(new Uri("http://localhost:9000/api/chat"), request.RequestUri);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""
+                    {"message":{"content":"  hi  "}}
+                    """)
+            };
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost:9000/")
+        };
+
+        var client = new OllamaLlmClient(httpClient, "llama3", httpClient.BaseAddress);
+        var response = await client.GetResponseAsync("Hello there");
+
+        Assert.Equal("hi", response);
+
+        using var document = JsonDocument.Parse(handler.LastRequestContent!);
+        var root = document.RootElement;
+        Assert.Equal("llama3", root.GetProperty("model").GetString());
+        Assert.False(root.GetProperty("stream").GetBoolean());
+        Assert.Equal("user", root.GetProperty("messages")[0].GetProperty("role").GetString());
+        Assert.Equal("Hello there", root.GetProperty("messages")[0].GetProperty("content").GetString());
+    }
+
+    [Fact]
+    public async Task OllamaClient_ThrowsOnErrorResponse()
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent("problem")
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost:9000/")
+        };
+
+        var client = new OllamaLlmClient(httpClient, "llama3", httpClient.BaseAddress);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.GetResponseAsync("prompt"));
+    }
+
     private sealed class StubHttpMessageHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _responseFactory;

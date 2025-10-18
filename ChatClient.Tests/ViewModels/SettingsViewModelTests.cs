@@ -75,6 +75,58 @@ public class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task SaveCommand_PersistsOllamaSettings()
+    {
+        var settings = new AppSettings
+        {
+            Provider = LlmProvider.Ollama,
+            Ollama = new ProviderSettings { Endpoint = "http://localhost:11434/", Model = "llama3" }
+        };
+
+        var settingsService = new RecordingSettingsService();
+        var modelCatalogService = new StubModelCatalogService(new[] { "llama3", "llama3.1" });
+        var sessionService = new StubSessionPersistenceService();
+        var viewModel = new SettingsViewModel(settingsService, modelCatalogService, settings, sessionService);
+
+        var ollamaOption = viewModel.Providers.First(p => p.Provider == LlmProvider.Ollama);
+        viewModel.SelectedProviderOption = ollamaOption;
+        viewModel.OllamaEndpoint = "http://localhost:12345/";
+        viewModel.SelectedModel = "llama3.1";
+
+        await viewModel.SaveCommand.ExecuteAsync(null);
+
+        Assert.NotNull(settingsService.LastSaved);
+        Assert.Equal(LlmProvider.Ollama, settingsService.LastSaved.Provider);
+        Assert.Equal("http://localhost:12345/", settingsService.LastSaved.Ollama.Endpoint);
+        Assert.Equal("llama3.1", settingsService.LastSaved.Ollama.Model);
+    }
+
+    [Fact]
+    public void SaveCommand_RequiresOllamaEndpoint()
+    {
+        var settings = new AppSettings
+        {
+            Provider = LlmProvider.Ollama,
+            Ollama = new ProviderSettings { Endpoint = "http://localhost:11434/", Model = "llama3" }
+        };
+
+        var settingsService = new RecordingSettingsService();
+        var modelCatalogService = new StubModelCatalogService(new[] { "llama3" });
+        var sessionService = new StubSessionPersistenceService();
+        var viewModel = new SettingsViewModel(settingsService, modelCatalogService, settings, sessionService);
+
+        var ollamaOption = viewModel.Providers.First(p => p.Provider == LlmProvider.Ollama);
+        viewModel.SelectedProviderOption = ollamaOption;
+        viewModel.OllamaEndpoint = string.Empty;
+        viewModel.SelectedModel = "llama3";
+
+        Assert.False(viewModel.SaveCommand.CanExecute(null));
+
+        viewModel.OllamaEndpoint = "http://localhost:11434/";
+        Assert.True(viewModel.SaveCommand.CanExecute(null));
+    }
+
+    [Fact]
     public async Task SaveCommand_UpdatesProviderSelection()
     {
         var settings = new AppSettings
@@ -203,7 +255,7 @@ public class SettingsViewModelTests
             _models = models;
         }
 
-        public Task<IReadOnlyList<string>> GetModelsAsync(LlmProvider provider, string apiKey, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<string>> GetModelsAsync(LlmProvider provider, ProviderSettings providerSettings, CancellationToken cancellationToken)
             => Task.FromResult(_models);
     }
 

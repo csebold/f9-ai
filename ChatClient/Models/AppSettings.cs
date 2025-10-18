@@ -13,6 +13,8 @@ public sealed class AppSettings
 
     public ProviderSettings OpenRouter { get; set; } = new();
 
+    public ProviderSettings Ollama { get; set; } = new();
+
     public string? ActiveProjectId { get; set; }
 
     public List<ProjectSettings> Projects { get; set; } = new();
@@ -33,6 +35,7 @@ public sealed class AppSettings
             LlmProvider.OpenAi => OpenAi,
             LlmProvider.Anthropic => Anthropic,
             LlmProvider.OpenRouter => OpenRouter,
+            LlmProvider.Ollama => Ollama,
             _ => OpenAi
         };
 }
@@ -42,6 +45,8 @@ public sealed class ProviderSettings
     public string ApiKey { get; set; } = string.Empty;
 
     public string Model { get; set; } = string.Empty;
+
+    public string Endpoint { get; set; } = string.Empty;
 }
 
 public sealed class ChatInputSettings

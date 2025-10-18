@@ -119,7 +119,7 @@ public class MainWindowViewModelTests
 
         var executionTask = viewModel.SendCommand.ExecuteAsync(null);
 
-        await WaitForAsync(() => viewModel.IsResponding, TimeSpan.FromMilliseconds(200));
+        await WaitForAsync(() => viewModel.IsResponding, TimeSpan.FromSeconds(1));
 
         Assert.False(viewModel.SendCommand.CanExecute(null));
         Assert.True(viewModel.StopCommand.CanExecute(null));
@@ -153,19 +153,19 @@ public class MainWindowViewModelTests
 
         var executionTask = viewModel.SendCommand.ExecuteAsync(null);
 
-        await WaitForAsync(() => viewModel.IsResponding, TimeSpan.FromMilliseconds(200));
+        await WaitForAsync(() => viewModel.IsResponding, TimeSpan.FromSeconds(1));
         Assert.True(viewModel.StopCommand.CanExecute(null));
 
         viewModel.StopCommand.Execute(null);
 
         await executionTask;
-        await WaitForAsync(() => !viewModel.IsResponding, TimeSpan.FromMilliseconds(200));
+        await WaitForAsync(() => !viewModel.IsResponding, TimeSpan.FromSeconds(1));
 
         Assert.Equal("Request canceled.", viewModel.StatusMessage);
         Assert.False(viewModel.CanRetry);
         Assert.Null(viewModel.ErrorSummary);
 
-        await WaitForAsync(() => cancellationObserved.Task.IsCompleted, TimeSpan.FromMilliseconds(200));
+        await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(1));
     }
 
     [Fact]

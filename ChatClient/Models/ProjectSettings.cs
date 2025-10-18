@@ -21,6 +21,8 @@ public sealed class ProjectSettings
 
     public string? Model { get; set; }
 
+    public string? Endpoint { get; set; }
+
     public string? ThemeId { get; set; }
 
     public string? FontFamily { get; set; }

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if [[ -n "${SKIP_VERSION_BUMP:-}" ]]; then
+  exit 0
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+cd "${REPO_ROOT}"
+
+if git diff --cached --name-only --quiet -- VERSION; then
+  "${REPO_ROOT}/scripts/bump-version.sh"
+  git add VERSION
+  if [[ -f "ChatClient/app.manifest" ]]; then
+    git add ChatClient/app.manifest
+  fi
+fi

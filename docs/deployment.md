@@ -7,7 +7,7 @@ This guide outlines how to produce release-ready builds of the Avalonia chat cli
 - Packaging scripts output zipped, self-contained binaries that do not require the .NET runtime.
 - Artifacts land in `artifacts/packages/<version>/ChatClient-<version>-<rid>.zip`.
 - Runtime identifiers (`rid`) covered by default: `win-x64`, `win-arm64`, `osx-x64`, `osx-arm64`, `linux-x64`, `linux-arm64`.
-- Version metadata originates from the latest git tag (falling back to the current timestamp) and can be overridden with `APP_VERSION=...`.
+- Version metadata originates from the repository `VERSION` file (patch incremented on each commit). You can override it at packaging time with `APP_VERSION=...`.
 
 ## Running the Packaging Scripts
 

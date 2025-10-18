@@ -27,6 +27,7 @@ public class ProjectEditorViewModelTests
         viewModel.Instructions = "  keep it short  ";
         viewModel.ApiKey = "  key-123  ";
         viewModel.Model = "  custom-model  ";
+        viewModel.Endpoint = "  http://localhost:9900/llm  ";
 
         viewModel.SaveCommand.Execute(null);
 
@@ -36,6 +37,7 @@ public class ProjectEditorViewModelTests
         Assert.Equal("keep it short", saved.Instructions);
         Assert.Equal("key-123", saved.ApiKey);
         Assert.Equal("custom-model", saved.Model);
+        Assert.Equal("http://localhost:9900/llm", saved.Endpoint);
         Assert.False(string.IsNullOrWhiteSpace(saved.WorkspacePath));
         Assert.Null(saved.Provider);
     }

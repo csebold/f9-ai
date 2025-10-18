@@ -7,5 +7,6 @@ public enum LlmProvider
 {
     OpenAi,
     Anthropic,
-    OpenRouter
+    OpenRouter,
+    Ollama
 }

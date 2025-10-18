@@ -48,6 +48,9 @@
       <TextBlock Text="Model Override"/>
       <TextBox Text="{Binding Model}"
                Watermark="Optional - inherits default when blank"/>
+      <TextBlock Text="Endpoint Override"/>
+      <TextBox Text="{Binding Endpoint}"
+               Watermark="Optional - inherits default when blank"/>
 
       <TextBlock Text="Workspace Folder" FontWeight="Bold"/>
       <TextBox Text="{Binding WorkspacePath}"

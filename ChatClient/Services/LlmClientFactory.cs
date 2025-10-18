@@ -9,6 +9,7 @@ public static class LlmClientFactory
     private const string DefaultOpenAiBase = "https://api.openai.com/v1/";
     private const string DefaultAnthropicBase = "https://api.anthropic.com/v1/";
     private const string DefaultOpenRouterBase = "https://openrouter.ai/api/v1/";
+    private const string DefaultOllamaBase = "http://localhost:11434/";
 
     public static LlmClientRegistration CreateDefault()
     {
@@ -19,6 +20,7 @@ public static class LlmClientFactory
         {
             LlmProvider.Anthropic => CreateAnthropicClient(),
             LlmProvider.OpenRouter => CreateOpenRouterClient(),
+            LlmProvider.Ollama => CreateOllamaClient(),
             _ => CreateOpenAiClient(),
         };
     }
@@ -40,6 +42,7 @@ public static class LlmClientFactory
         {
             LlmProvider.Anthropic => CreateAnthropicClient(providerSettings),
             LlmProvider.OpenRouter => CreateOpenRouterClient(providerSettings),
+            LlmProvider.Ollama => CreateOllamaClient(providerSettings),
             _ => CreateOpenAiClient(providerSettings),
         };
     }
@@ -56,7 +59,8 @@ public static class LlmClientFactory
             "anthropic" => LlmProvider.Anthropic,
             "openrouter" => LlmProvider.OpenRouter,
             "openai" => LlmProvider.OpenAi,
-            _ => throw new InvalidOperationException($"Unsupported LLM provider '{value}'. Expected 'openai', 'anthropic', or 'openrouter'.")
+            "ollama" => LlmProvider.Ollama,
+            _ => throw new InvalidOperationException($"Unsupported LLM provider '{value}'. Expected 'openai', 'anthropic', 'openrouter', or 'ollama'.")
         };
     }
 
@@ -94,6 +98,16 @@ public static class LlmClientFactory
         var httpClient = CreateHttpClient(baseUrl);
         var client = new OpenRouterLlmClient(httpClient, apiKey, model, httpClient.BaseAddress, referer, title);
         return new LlmClientRegistration(client, "OpenRouter", model, $"Connected to OpenRouter ({model}).");
+    }
+
+    private static LlmClientRegistration CreateOllamaClient()
+    {
+        var baseUrl = GetOptionalEnvironmentVariable("OLLAMA_ENDPOINT") ?? DefaultOllamaBase;
+        var model = GetOptionalEnvironmentVariable("OLLAMA_MODEL") ?? "llama3";
+
+        var httpClient = CreateHttpClient(baseUrl);
+        var client = new OllamaLlmClient(httpClient, model, httpClient.BaseAddress);
+        return new LlmClientRegistration(client, "Ollama", model, $"Connected to Ollama ({model}).");
     }
 
     private static LlmClientRegistration CreateOpenAiClient(ProviderSettings settings)
@@ -136,6 +150,26 @@ public static class LlmClientFactory
         var httpClient = CreateHttpClient(DefaultOpenRouterBase);
         var client = new OpenRouterLlmClient(httpClient, apiKey, model, httpClient.BaseAddress, null, null);
         return new LlmClientRegistration(client, "OpenRouter", model, $"Connected to OpenRouter ({model}).");
+    }
+
+    private static LlmClientRegistration CreateOllamaClient(ProviderSettings settings)
+    {
+        if (settings is null)
+        {
+            throw new ArgumentNullException(nameof(settings));
+        }
+
+        var baseUrl = string.IsNullOrWhiteSpace(settings.Endpoint)
+            ? DefaultOllamaBase
+            : settings.Endpoint.Trim();
+        var model = string.IsNullOrWhiteSpace(settings.Model) ? "llama3" : settings.Model.Trim();
+
+        var httpClient = CreateHttpClient(baseUrl);
+        var client = new OllamaLlmClient(httpClient, model, httpClient.BaseAddress);
+        var status = httpClient.BaseAddress is null
+            ? $"Connected to Ollama ({model})."
+            : $"Connected to Ollama ({model}) at {httpClient.BaseAddress}";
+        return new LlmClientRegistration(client, "Ollama", model, status);
     }
 
     private static HttpClient CreateHttpClient(string baseUrl)
@@ -197,6 +231,7 @@ public static class LlmClientFactory
         var baseSettings = settings.GetProviderSettings(provider);
         var apiKey = baseSettings.ApiKey;
         var model = baseSettings.Model;
+        var endpoint = baseSettings.Endpoint;
 
         if (project is not null && (project.Provider is null || project.Provider == provider))
         {
@@ -209,12 +244,18 @@ public static class LlmClientFactory
             {
                 model = project.Model.Trim();
             }
+
+            if (!string.IsNullOrWhiteSpace(project.Endpoint))
+            {
+                endpoint = project.Endpoint.Trim();
+            }
         }
 
         return new ProviderSettings
         {
             ApiKey = apiKey,
-            Model = model
+            Model = model,
+            Endpoint = endpoint
         };
     }
 }

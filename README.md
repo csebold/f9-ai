@@ -31,8 +31,18 @@ Cross-platform Avalonia desktop client that delivers a responsive chat experienc
   # or on Windows
   pwsh ./scripts/package.ps1
   ```
-- Artifacts land in `artifacts/packages/<version>`. Override the version stamp by exporting `APP_VERSION`.
+- Artifacts land in `artifacts/packages/<version>`. The default version stamp comes from the repository `VERSION` file; you can override it by exporting `APP_VERSION`.
 - See `docs/deployment.md` for the verification checklist, system requirements, and release notes template.
+
+## Versioning
+
+- The official application version lives in the top-level `VERSION` file. Packaging scripts, MSBuild, and manifests consume this value.
+- A helper hook will automatically bump the patch number on every commit. Opt in via:
+  ```bash
+  git config core.hooksPath scripts/hooks
+  ```
+- You can skip the automatic bump for a commit by setting `SKIP_VERSION_BUMP=1` in your environment before committing.
+- To bump manually (for CI or custom workflows), run `./scripts/bump-version.sh`.
 
 ## Developer Workflow
 

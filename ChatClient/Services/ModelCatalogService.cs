@@ -6,12 +6,14 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using ChatClient.Models;
 
 namespace ChatClient.Services;
 
 public sealed class ModelCatalogService : IModelCatalogService, IDisposable
 {
     private const string AnthropicVersion = "2023-06-01";
+    private const string DefaultOllamaBase = "http://localhost:11434/";
 
     private readonly HttpClient _httpClient;
     private bool _disposed;
@@ -24,18 +26,19 @@ public sealed class ModelCatalogService : IModelCatalogService, IDisposable
         };
     }
 
-    public async Task<IReadOnlyList<string>> GetModelsAsync(LlmProvider provider, string apiKey, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<string>> GetModelsAsync(LlmProvider provider, ProviderSettings providerSettings, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(apiKey))
+        if (providerSettings is null)
         {
-            throw new InvalidOperationException("An API key is required to load models for the selected provider.");
+            throw new ArgumentNullException(nameof(providerSettings));
         }
 
         return provider switch
         {
-            LlmProvider.Anthropic => await GetAnthropicModelsAsync(apiKey, cancellationToken).ConfigureAwait(false),
-            LlmProvider.OpenRouter => await GetOpenRouterModelsAsync(apiKey, cancellationToken).ConfigureAwait(false),
-            _ => await GetOpenAiModelsAsync(apiKey, cancellationToken).ConfigureAwait(false),
+            LlmProvider.Anthropic => await GetAnthropicModelsAsync(RequireApiKey(providerSettings.ApiKey), cancellationToken).ConfigureAwait(false),
+            LlmProvider.OpenRouter => await GetOpenRouterModelsAsync(RequireApiKey(providerSettings.ApiKey), cancellationToken).ConfigureAwait(false),
+            LlmProvider.Ollama => await GetOllamaModelsAsync(providerSettings.Endpoint, cancellationToken).ConfigureAwait(false),
+            _ => await GetOpenAiModelsAsync(RequireApiKey(providerSettings.ApiKey), cancellationToken).ConfigureAwait(false),
         };
     }
 
@@ -48,6 +51,16 @@ public sealed class ModelCatalogService : IModelCatalogService, IDisposable
 
         _httpClient.Dispose();
         _disposed = true;
+    }
+
+    private static string RequireApiKey(string apiKey)
+    {
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw new InvalidOperationException("An API key is required to load models for the selected provider.");
+        }
+
+        return apiKey.Trim();
     }
 
     private async Task<IReadOnlyList<string>> GetOpenAiModelsAsync(string apiKey, CancellationToken cancellationToken)
@@ -99,6 +112,28 @@ public sealed class ModelCatalogService : IModelCatalogService, IDisposable
         return SortAndDistinct(models);
     }
 
+    private async Task<IReadOnlyList<string>> GetOllamaModelsAsync(string? endpoint, CancellationToken cancellationToken)
+    {
+        var baseUrl = string.IsNullOrWhiteSpace(endpoint) ? DefaultOllamaBase : endpoint.Trim();
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var baseUri))
+        {
+            throw new InvalidOperationException($"Invalid Ollama endpoint '{endpoint}'.");
+        }
+
+        var tagsUri = new Uri(baseUri, "api/tags");
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, tagsUri);
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+
+        var content = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+        EnsureSuccess(response, content);
+
+        using var document = JsonDocument.Parse(content);
+        var models = ExtractOllamaModelNames(document.RootElement);
+        return SortAndDistinct(models);
+    }
+
     private static IReadOnlyList<string> ExtractModelIds(JsonElement root, params string[] arrayPropertyCandidates)
     {
         foreach (var property in arrayPropertyCandidates)
@@ -126,6 +161,34 @@ public sealed class ModelCatalogService : IModelCatalogService, IDisposable
         }
 
         return Array.Empty<string>();
+    }
+
+    private static IReadOnlyList<string> ExtractOllamaModelNames(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return Array.Empty<string>();
+        }
+
+        if (!root.TryGetProperty("models", out var array) || array.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<string>();
+        }
+
+        var builder = new List<string>();
+        foreach (var item in array.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.Object && item.TryGetProperty("name", out var nameElement))
+            {
+                var name = nameElement.GetString();
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    builder.Add(name);
+                }
+            }
+        }
+
+        return builder;
     }
 
     private static IReadOnlyList<string> SortAndDistinct(IReadOnlyList<string> models)

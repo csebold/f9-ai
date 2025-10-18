@@ -54,6 +54,20 @@ public class LlmClientFactoryTests
         Assert.Equal("claude-3-sonnet", registration.ModelId);
     }
 
+    [Fact]
+    public void CreateForProject_UsesOllamaSettings()
+    {
+        var settings = CreateDefaultSettings();
+        settings.Provider = LlmProvider.Ollama;
+        settings.Ollama.Endpoint = "http://localhost:11434/";
+        settings.Ollama.Model = "llama3";
+
+        var registration = LlmClientFactory.CreateForProject(settings, project: null);
+
+        Assert.Equal("Ollama", registration.ProviderDisplayName);
+        Assert.Equal("llama3", registration.ModelId);
+    }
+
     private static AppSettings CreateDefaultSettings()
     {
         return new AppSettings
@@ -73,6 +87,11 @@ public class LlmClientFactoryTests
             {
                 ApiKey = "openrouter-default",
                 Model = "openrouter/auto"
+            },
+            Ollama = new ProviderSettings
+            {
+                Endpoint = "http://localhost:11434/",
+                Model = "llama3"
             }
         };
     }

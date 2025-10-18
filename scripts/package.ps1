@@ -11,6 +11,13 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $project = Join-Path $repoRoot "ChatClient/ChatClient.csproj"
+$versionFile = Join-Path $repoRoot "VERSION"
+
+if (-not $Version -or $Version.Trim().Length -eq 0) {
+    if (Test-Path $versionFile) {
+        $Version = (Get-Content $versionFile -Raw).Trim()
+    }
+}
 
 if (-not $Version -or $Version.Trim().Length -eq 0) {
     try {

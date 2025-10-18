@@ -29,6 +29,7 @@ public partial class ProjectEditorViewModel : ObservableObject
         Instructions = _workingCopy.Instructions;
         ApiKey = _workingCopy.ApiKey ?? string.Empty;
         Model = _workingCopy.Model ?? string.Empty;
+        Endpoint = _workingCopy.Endpoint ?? string.Empty;
         WorkspacePath = string.IsNullOrWhiteSpace(_workingCopy.WorkspacePath)
             ? AppPaths.GetProjectWorkspacePath(_workingCopy.Id)
             : _workingCopy.WorkspacePath!;
@@ -64,6 +65,9 @@ public partial class ProjectEditorViewModel : ObservableObject
     private string _model = string.Empty;
 
     [ObservableProperty]
+    private string _endpoint = string.Empty;
+
+    [ObservableProperty]
     private string _workspacePath = string.Empty;
 
     [ObservableProperty]
@@ -84,6 +88,7 @@ public partial class ProjectEditorViewModel : ObservableObject
         _workingCopy.Provider = SelectedProviderOption.Provider;
         _workingCopy.ApiKey = string.IsNullOrWhiteSpace(ApiKey) ? null : ApiKey.Trim();
         _workingCopy.Model = string.IsNullOrWhiteSpace(Model) ? null : Model.Trim();
+        _workingCopy.Endpoint = string.IsNullOrWhiteSpace(Endpoint) ? null : Endpoint.Trim();
         _workingCopy.WorkspacePath = WorkspacePath;
 
         Saved?.Invoke(this, Clone(_workingCopy));
@@ -117,7 +122,8 @@ public partial class ProjectEditorViewModel : ObservableObject
             new ProjectProviderOption(null, defaultDisplay),
             new ProjectProviderOption(LlmProvider.OpenAi, "OpenAI"),
             new ProjectProviderOption(LlmProvider.Anthropic, "Anthropic"),
-            new ProjectProviderOption(LlmProvider.OpenRouter, "OpenRouter")
+            new ProjectProviderOption(LlmProvider.OpenRouter, "OpenRouter"),
+            new ProjectProviderOption(LlmProvider.Ollama, "Ollama")
         };
     }
 
@@ -126,6 +132,7 @@ public partial class ProjectEditorViewModel : ObservableObject
         {
             LlmProvider.Anthropic => "Anthropic",
             LlmProvider.OpenRouter => "OpenRouter",
+            LlmProvider.Ollama => "Ollama",
             _ => "OpenAI"
         };
 
@@ -141,6 +148,7 @@ public partial class ProjectEditorViewModel : ObservableObject
             Provider = source.Provider,
             ApiKey = source.ApiKey,
             Model = source.Model,
+            Endpoint = source.Endpoint,
             ThemeId = source.ThemeId,
             FontFamily = source.FontFamily
         };

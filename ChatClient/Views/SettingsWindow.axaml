@@ -40,6 +40,11 @@
         <TextBox Text="{Binding OpenRouterApiKey}" Watermark="org-..." />
       </StackPanel>
 
+      <StackPanel Spacing="8">
+        <TextBlock Text="Ollama Endpoint"/>
+        <TextBox Text="{Binding OllamaEndpoint}" Watermark="http://localhost:11434/" />
+      </StackPanel>
+
       <Separator/>
 
       <TextBlock Text="Model" FontWeight="Bold"/>

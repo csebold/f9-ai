@@ -7,6 +7,13 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PROJECT="${REPO_ROOT}/ChatClient/ChatClient.csproj"
 CONFIG="${CONFIG:-Release}"
 VERSION="${APP_VERSION:-}"
+VERSION_FILE="${REPO_ROOT}/VERSION"
+
+if [[ -z "${VERSION}" ]]; then
+  if [[ -f "${VERSION_FILE}" ]]; then
+    VERSION="$(tr -d '\r\n' < "${VERSION_FILE}")"
+  fi
+fi
 
 if [[ -z "${VERSION}" ]]; then
   if git -C "${REPO_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
