@@ -72,7 +72,10 @@ public static class LlmClientFactory
 
         var httpClient = CreateHttpClient(baseUrl);
         var client = new OpenAiLlmClient(httpClient, apiKey, model, httpClient.BaseAddress);
-        return new LlmClientRegistration(client, "OpenAI", model, $"Connected to OpenAI ({model}).");
+        return new LlmClientRegistration(client, LlmProvider.OpenAi, "OpenAI", model, $"Connected to OpenAI ({model}).")
+        {
+            Endpoint = httpClient.BaseAddress
+        };
     }
 
     private static LlmClientRegistration CreateAnthropicClient()
@@ -84,7 +87,10 @@ public static class LlmClientFactory
 
         var httpClient = CreateHttpClient(baseUrl);
         var client = new AnthropicLlmClient(httpClient, apiKey, model, httpClient.BaseAddress, maxTokens);
-        return new LlmClientRegistration(client, "Anthropic", model, $"Connected to Anthropic ({model}).");
+        return new LlmClientRegistration(client, LlmProvider.Anthropic, "Anthropic", model, $"Connected to Anthropic ({model}).")
+        {
+            Endpoint = httpClient.BaseAddress
+        };
     }
 
     private static LlmClientRegistration CreateOpenRouterClient()
@@ -97,7 +103,10 @@ public static class LlmClientFactory
 
         var httpClient = CreateHttpClient(baseUrl);
         var client = new OpenRouterLlmClient(httpClient, apiKey, model, httpClient.BaseAddress, referer, title);
-        return new LlmClientRegistration(client, "OpenRouter", model, $"Connected to OpenRouter ({model}).");
+        return new LlmClientRegistration(client, LlmProvider.OpenRouter, "OpenRouter", model, $"Connected to OpenRouter ({model}).")
+        {
+            Endpoint = httpClient.BaseAddress
+        };
     }
 
     private static LlmClientRegistration CreateOllamaClient()
@@ -107,7 +116,10 @@ public static class LlmClientFactory
 
         var httpClient = CreateHttpClient(baseUrl);
         var client = new OllamaLlmClient(httpClient, model, httpClient.BaseAddress);
-        return new LlmClientRegistration(client, "Ollama", model, $"Connected to Ollama ({model}).");
+        return new LlmClientRegistration(client, LlmProvider.Ollama, "Ollama", model, $"Connected to Ollama ({model}).")
+        {
+            Endpoint = httpClient.BaseAddress
+        };
     }
 
     private static LlmClientRegistration CreateOpenAiClient(ProviderSettings settings)
@@ -121,7 +133,10 @@ public static class LlmClientFactory
         var model = string.IsNullOrWhiteSpace(settings.Model) ? "gpt-4o-mini" : settings.Model.Trim();
         var httpClient = CreateHttpClient(DefaultOpenAiBase);
         var client = new OpenAiLlmClient(httpClient, apiKey, model, httpClient.BaseAddress);
-        return new LlmClientRegistration(client, "OpenAI", model, $"Connected to OpenAI ({model}).");
+        return new LlmClientRegistration(client, LlmProvider.OpenAi, "OpenAI", model, $"Connected to OpenAI ({model}).")
+        {
+            Endpoint = httpClient.BaseAddress
+        };
     }
 
     private static LlmClientRegistration CreateAnthropicClient(ProviderSettings settings)
@@ -135,7 +150,10 @@ public static class LlmClientFactory
         var model = string.IsNullOrWhiteSpace(settings.Model) ? "claude-3-haiku-20240307" : settings.Model.Trim();
         var httpClient = CreateHttpClient(DefaultAnthropicBase);
         var client = new AnthropicLlmClient(httpClient, apiKey, model, httpClient.BaseAddress, 1024);
-        return new LlmClientRegistration(client, "Anthropic", model, $"Connected to Anthropic ({model}).");
+        return new LlmClientRegistration(client, LlmProvider.Anthropic, "Anthropic", model, $"Connected to Anthropic ({model}).")
+        {
+            Endpoint = httpClient.BaseAddress
+        };
     }
 
     private static LlmClientRegistration CreateOpenRouterClient(ProviderSettings settings)
@@ -149,7 +167,10 @@ public static class LlmClientFactory
         var model = string.IsNullOrWhiteSpace(settings.Model) ? "openrouter/auto" : settings.Model.Trim();
         var httpClient = CreateHttpClient(DefaultOpenRouterBase);
         var client = new OpenRouterLlmClient(httpClient, apiKey, model, httpClient.BaseAddress, null, null);
-        return new LlmClientRegistration(client, "OpenRouter", model, $"Connected to OpenRouter ({model}).");
+        return new LlmClientRegistration(client, LlmProvider.OpenRouter, "OpenRouter", model, $"Connected to OpenRouter ({model}).")
+        {
+            Endpoint = httpClient.BaseAddress
+        };
     }
 
     private static LlmClientRegistration CreateOllamaClient(ProviderSettings settings)
@@ -169,7 +190,10 @@ public static class LlmClientFactory
         var status = httpClient.BaseAddress is null
             ? $"Connected to Ollama ({model})."
             : $"Connected to Ollama ({model}) at {httpClient.BaseAddress}";
-        return new LlmClientRegistration(client, "Ollama", model, status);
+        return new LlmClientRegistration(client, LlmProvider.Ollama, "Ollama", model, status)
+        {
+            Endpoint = httpClient.BaseAddress
+        };
     }
 
     private static HttpClient CreateHttpClient(string baseUrl)

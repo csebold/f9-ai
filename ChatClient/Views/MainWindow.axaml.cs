@@ -26,6 +26,8 @@ public partial class MainWindow : Window
     private readonly ISettingsService _settingsService;
     private readonly IModelCatalogService _modelCatalogService;
     private readonly ISessionPersistenceService _sessionPersistenceService;
+    private readonly IBackgroundProcessService _backgroundProcessService;
+    private readonly IOllamaProcessManager _ollamaProcessManager;
     private readonly ObservableCollection<ProjectListItem> _projectItems = new();
     private readonly ObservableCollection<ChatSessionListItem> _sessionItems = new();
     private readonly Dictionary<string, ProjectSessionState> _sessionStates = new(StringComparer.Ordinal);
@@ -46,6 +48,8 @@ public partial class MainWindow : Window
     private bool _suppressProjectSelectionChanged;
     private bool _suppressSessionSelectionChanged;
     private bool _suppressMessageSync;
+    private readonly bool _ownsBackgroundService;
+    private readonly bool _ownsOllamaManager;
 
     public MainWindow()
         : this(
@@ -64,7 +68,9 @@ public partial class MainWindow : Window
         ISessionPersistenceService sessionPersistenceService,
         AppSettings settings,
         ProjectSettings? activeProject,
-        SessionStoreSnapshot? sessionSnapshot)
+        SessionStoreSnapshot? sessionSnapshot,
+        IBackgroundProcessService? backgroundProcessService = null,
+        IOllamaProcessManager? ollamaProcessManager = null)
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _modelCatalogService = modelCatalogService ?? throw new ArgumentNullException(nameof(modelCatalogService));
@@ -72,6 +78,11 @@ public partial class MainWindow : Window
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _activeProject = activeProject;
         _sessionSnapshot = sessionSnapshot ?? new SessionStoreSnapshot();
+        _backgroundProcessService = backgroundProcessService ?? new BackgroundProcessService();
+        _ollamaProcessManager = ollamaProcessManager ?? new OllamaProcessManager(_backgroundProcessService);
+        _ownsBackgroundService = backgroundProcessService is null;
+        _ownsOllamaManager = ollamaProcessManager is null;
+        _backgroundProcessService.ProcessChanged += OnBackgroundProcessChanged;
 
         InitializeComponent();
 
@@ -118,6 +129,7 @@ public partial class MainWindow : Window
         {
             _viewModel.Messages.CollectionChanged += OnMessagesCollectionChanged;
             ResetAutoScroll(requestScroll: true);
+            _viewModel.InitializeBackgroundProcesses(_backgroundProcessService, _backgroundProcessService.GetProcesses());
         }
     }
 
@@ -703,7 +715,8 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             var detail = $"LLM configuration error: {ex.Message}";
-            registration = new LlmClientRegistration(new FallbackLlmClient(detail), "Unavailable", "N/A", detail);
+            var provider = project?.Provider ?? _settings.Provider;
+            registration = new LlmClientRegistration(new FallbackLlmClient(detail), provider, "Unavailable", "N/A", detail);
         }
 
         _activeProject = project;
@@ -736,6 +749,11 @@ public partial class MainWindow : Window
 
         _viewModel.ChangeProject(registration, projectName, instructions, description, hasCustomProject, isUpdate, emitStatusMessage);
 
+        if (registration.Provider == LlmProvider.Ollama)
+        {
+            await EnsureOllamaRunningAsync(registration, project, CancellationToken.None);
+        }
+
         RefreshProjectList();
         RefreshSessionsForProject(projectKey, activeSession.Id);
 
@@ -755,6 +773,71 @@ public partial class MainWindow : Window
                 // Ignore persistence failures; user can retry later.
             }
         }
+    }
+
+    private async Task EnsureOllamaRunningAsync(LlmClientRegistration registration, ProjectSettings? project, CancellationToken cancellationToken)
+    {
+        var endpoint = ResolveOllamaEndpoint(registration, project);
+
+        if (_viewModel is not null)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                _viewModel.StatusMessage = "Ensuring Ollama server is running...";
+                _viewModel.ErrorSummary = null;
+            });
+        }
+
+        try
+        {
+            await _ollamaProcessManager.EnsureServerAsync(endpoint, cancellationToken).ConfigureAwait(false);
+
+            if (_viewModel is not null)
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    _viewModel.StatusMessage = $"Ready - {registration.ProviderDisplayName} ({registration.ModelId})";
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            if (_viewModel is not null)
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    _viewModel.ErrorSummary = $"Ollama startup failed: {ex.Message}";
+                });
+            }
+        }
+    }
+
+    private static string? ResolveOllamaEndpoint(LlmClientRegistration registration, ProjectSettings? project)
+    {
+        if (registration.Endpoint is not null)
+        {
+            return registration.Endpoint.ToString();
+        }
+
+        if (!string.IsNullOrWhiteSpace(project?.Endpoint))
+        {
+            return project.Endpoint;
+        }
+
+        return null;
+    }
+
+    private void OnBackgroundProcessChanged(object? sender, BackgroundProcessChangedEventArgs e)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_viewModel is null)
+            {
+                return;
+            }
+
+            _viewModel.ApplyBackgroundProcessChange(e.Snapshot, e.Kind);
+        });
     }
 
     private Task ApplySessionAsync(string projectKey, ChatSessionState session)
@@ -1287,6 +1370,18 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         base.OnClosed(e);
+
+        _backgroundProcessService.ProcessChanged -= OnBackgroundProcessChanged;
+
+        if (_ownsOllamaManager)
+        {
+            _ollamaProcessManager.Dispose();
+        }
+
+        if (_ownsBackgroundService)
+        {
+            _backgroundProcessService.Dispose();
+        }
 
         if (_viewModel is not null)
         {

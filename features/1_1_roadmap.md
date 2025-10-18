@@ -5,8 +5,8 @@
 ### ollama
 
 - [x] Support local installations and routing hubs like Ollama
-- [ ] If Ollama is not running then start it in the background while we're running
-- [ ] Support showing a terminal where local tools or servers are running
+- [x] If Ollama is not running then start it in the background while we're running
+- [x] Support showing a terminal where local tools or servers are running, actually multiple terminal support because we could be running multiple servers and tools at the same time; add this to the GUI with buttons marked with icons indicating if this is a server, an MCP, or what. We don't have to reinvent the wheel, each terminal can spawn a native terminal that is tailing the output of the server or tool or whatever that's running in another thread
 
 #### Multiple models switching and downloading
 

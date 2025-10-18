@@ -17,8 +17,11 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private ILlmClient _llmClient = null!;
     private LlmClientRegistration _registration = null!;
+    private IBackgroundProcessService? _backgroundProcessService;
+    private readonly Dictionary<string, BackgroundProcessItemViewModel> _processLookup = new(StringComparer.Ordinal);
 
     public ObservableCollection<Message> Messages { get; } = new();
+    public ObservableCollection<BackgroundProcessItemViewModel> BackgroundProcesses { get; } = new();
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SendCommand))]
@@ -61,11 +64,13 @@ public partial class MainWindowViewModel : ViewModelBase
         string? projectInstructions = null,
         string? projectDescription = null,
         bool hasCustomProject = false,
-        IEnumerable<Message>? initialMessages = null)
+        IEnumerable<Message>? initialMessages = null,
+        IBackgroundProcessService? backgroundProcessService = null)
     {
         SendCommand = new AsyncRelayCommand(SendAsync, CanSendPrompt);
         StopCommand = new RelayCommand(StopRequest, CanStopRequest);
         RetryCommand = new AsyncRelayCommand(RetryAsync, CanRetryRequest);
+        _backgroundProcessService = backgroundProcessService;
 
         ResetMessages(initialMessages, includeWelcomeWhenEmpty: true);
 
@@ -92,6 +97,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public string CurrentProvider => _registration.ProviderDisplayName;
 
+    public LlmProvider CurrentProviderKind => _registration.Provider;
+
     public string CurrentModel => _registration.ModelId;
 
     public void ChangeProject(
@@ -104,9 +111,72 @@ public partial class MainWindowViewModel : ViewModelBase
         bool emitStatusMessage = true) =>
         ApplyContext(registration, projectName, instructions, description, hasCustomProject, isUpdate, emitStatusMessage);
 
-    private LlmClientRegistration CreateFallbackRegistration(string message)
+    private LlmClientRegistration CreateFallbackRegistration(string message) =>
+        new(new FallbackLlmClient(message), LlmProvider.OpenAi, "Unavailable", "N/A", message);
+
+    public void InitializeBackgroundProcesses(IBackgroundProcessService service, IReadOnlyCollection<BackgroundProcessSnapshot> processes)
     {
-        return new LlmClientRegistration(new FallbackLlmClient(message), "Unavailable", "N/A", message);
+        _backgroundProcessService = service ?? throw new ArgumentNullException(nameof(service));
+        _processLookup.Clear();
+        BackgroundProcesses.Clear();
+
+        foreach (var snapshot in processes)
+        {
+            var item = new BackgroundProcessItemViewModel(snapshot, _backgroundProcessService);
+            _processLookup[snapshot.Id] = item;
+            BackgroundProcesses.Add(item);
+        }
+    }
+
+    public void ApplyBackgroundProcessChange(BackgroundProcessSnapshot snapshot, BackgroundProcessChangeKind kind)
+    {
+        if (_backgroundProcessService is null)
+        {
+            return;
+        }
+
+        switch (kind)
+        {
+            case BackgroundProcessChangeKind.Added:
+            case BackgroundProcessChangeKind.Updated:
+                AddOrUpdateProcess(snapshot);
+                break;
+            case BackgroundProcessChangeKind.Removed:
+                RemoveProcess(snapshot.Id);
+                break;
+            default:
+                RemoveProcess(snapshot.Id);
+                break;
+        }
+    }
+
+    private void AddOrUpdateProcess(BackgroundProcessSnapshot snapshot)
+    {
+        if (_processLookup.TryGetValue(snapshot.Id, out var existing))
+        {
+            existing.UpdateFromSnapshot(snapshot);
+            return;
+        }
+
+        if (_backgroundProcessService is null)
+        {
+            return;
+        }
+
+        var item = new BackgroundProcessItemViewModel(snapshot, _backgroundProcessService);
+        _processLookup[snapshot.Id] = item;
+        BackgroundProcesses.Add(item);
+    }
+
+    private void RemoveProcess(string id)
+    {
+        if (!_processLookup.TryGetValue(id, out var existing))
+        {
+            return;
+        }
+
+        BackgroundProcesses.Remove(existing);
+        _processLookup.Remove(id);
     }
 
     private bool CanSendPrompt() => !IsResponding && !string.IsNullOrWhiteSpace(Prompt);

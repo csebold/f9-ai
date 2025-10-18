@@ -241,6 +241,64 @@ public class MainWindowViewModelTests
         Assert.Equal("Ready - ProviderB (model-b)", viewModel.StatusMessage);
     }
 
+    [Fact]
+    public void InitializeBackgroundProcesses_PopulatesCollection()
+    {
+        var service = new StubBackgroundProcessService();
+        var snapshot = new BackgroundProcessSnapshot(
+            "ollama-daemon",
+            "Ollama Server",
+            BackgroundProcessCategory.Server,
+            "ollama",
+            "serve",
+            "/tmp/ollama.log",
+            DateTimeOffset.UtcNow,
+            true,
+            true,
+            null,
+            "Running",
+            true);
+
+        var viewModel = new MainWindowViewModel(backgroundProcessService: service);
+        viewModel.InitializeBackgroundProcesses(service, new[] { snapshot });
+
+        Assert.Single(viewModel.BackgroundProcesses);
+        var item = viewModel.BackgroundProcesses[0];
+        Assert.Equal("Ollama Server", item.DisplayName);
+        Assert.Equal("Running", item.StateText);
+    }
+
+    [Fact]
+    public void ApplyBackgroundProcessChange_UpdatesExistingItem()
+    {
+        var service = new StubBackgroundProcessService();
+        var start = new BackgroundProcessSnapshot(
+            "tool",
+            "Local Tool",
+            BackgroundProcessCategory.Tool,
+            "tool",
+            "--serve",
+            "/tmp/tool.log",
+            DateTimeOffset.UtcNow,
+            true,
+            false,
+            null,
+            "Starting...",
+            true);
+
+        var updated = start with { IsHealthy = true, StatusMessage = "Ready", IsRunning = true };
+
+        var viewModel = new MainWindowViewModel(backgroundProcessService: service);
+        viewModel.InitializeBackgroundProcesses(service, new[] { start });
+
+        viewModel.ApplyBackgroundProcessChange(updated, BackgroundProcessChangeKind.Updated);
+
+        Assert.Single(viewModel.BackgroundProcesses);
+        var item = viewModel.BackgroundProcesses[0];
+        Assert.Equal("Ready", item.StatusMessage);
+        Assert.Equal("Running", item.StateText);
+    }
+
     private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout)
     {
         var deadline = DateTime.UtcNow + timeout;
@@ -257,7 +315,30 @@ public class MainWindowViewModelTests
     }
 
     private static LlmClientRegistration CreateRegistration(ILlmClient client, string provider = "TestProvider", string model = "test-model", string? statusDetail = null)
-        => new(client, provider, model, statusDetail);
+        => new(client, LlmProvider.OpenAi, provider, model, statusDetail);
+
+    private sealed class StubBackgroundProcessService : IBackgroundProcessService
+    {
+        public event EventHandler<BackgroundProcessChangedEventArgs>? ProcessChanged;
+
+        public void Dispose()
+        {
+        }
+
+        public Task<BackgroundProcessSnapshot> EnsureRunningAsync(BackgroundProcessRequest request, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
+
+        public Task<BackgroundProcessSnapshot?> GetSnapshotAsync(string id, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
+
+        public IReadOnlyCollection<BackgroundProcessSnapshot> GetProcesses() => Array.Empty<BackgroundProcessSnapshot>();
+
+        public Task OpenTerminalAsync(string id, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task<bool> StopAsync(string id, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
+    }
 
     private sealed class StubLlmClient : ILlmClient
     {

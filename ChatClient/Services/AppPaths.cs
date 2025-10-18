@@ -48,4 +48,12 @@ public static class AppPaths
         var root = GetProjectsRoot();
         return Path.Combine(root, projectId);
     }
+
+    public static string GetLogsDirectory()
+    {
+        var baseDirectory = GetBaseDirectory();
+        var logsDirectory = Path.Combine(baseDirectory, "Logs");
+        Directory.CreateDirectory(logsDirectory);
+        return logsDirectory;
+    }
 }

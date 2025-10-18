@@ -21,6 +21,8 @@ public partial class App : Application
     private IModelCatalogService _modelCatalogService = null!;
     private IProjectWorkspaceService _projectWorkspaceService = null!;
     private ISessionPersistenceService _sessionPersistenceService = null!;
+    private IBackgroundProcessService _backgroundProcessService = null!;
+    private IOllamaProcessManager _ollamaProcessManager = null!;
     private AppSettings _settings = null!;
     private IStartupInitializer _startupInitializer = null!;
 
@@ -44,6 +46,8 @@ public partial class App : Application
             _projectWorkspaceService = new ProjectWorkspaceService();
             _sessionPersistenceService = new SessionPersistenceService();
             _startupInitializer = new StartupInitializer(_settingsService, _projectWorkspaceService);
+            _backgroundProcessService = new BackgroundProcessService();
+            _ollamaProcessManager = new OllamaProcessManager(_backgroundProcessService);
 
             var splashViewModel = new SplashScreenViewModel();
             var splashWindow = new SplashWindow
@@ -135,8 +139,16 @@ public partial class App : Application
             {
                 splashViewModel.ClearCancellationOffer();
 
-                var mainWindowViewModel = new MainWindowViewModel();
-                var mainWindow = new MainWindow(_settingsService, _modelCatalogService, _sessionPersistenceService, _settings, activeProject, sessionSnapshot)
+                var mainWindowViewModel = new MainWindowViewModel(backgroundProcessService: _backgroundProcessService);
+                var mainWindow = new MainWindow(
+                    _settingsService,
+                    _modelCatalogService,
+                    _sessionPersistenceService,
+                    _settings,
+                    activeProject,
+                    sessionSnapshot,
+                    _backgroundProcessService,
+                    _ollamaProcessManager)
                 {
                     DataContext = mainWindowViewModel
                 };
@@ -194,6 +206,9 @@ public partial class App : Application
         {
             disposable.Dispose();
         }
+
+        _ollamaProcessManager?.Dispose();
+        _backgroundProcessService?.Dispose();
     }
 
     private Task WatchForTimeoutAsync(Task initializationTask, SplashScreenViewModel splashViewModel, CancellationToken token, Action<string> postStatus)
