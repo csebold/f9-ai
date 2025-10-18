@@ -1,5 +1,11 @@
 # Version 1.1 Roadmap
 
+## Model Support
+
+### ollama
+
+* We will support local installations and routing hubs like Ollama
+
 ## Project Support
 
 ### Instructions
@@ -9,6 +15,7 @@
 ### Files
 
 * Projects have files and they will be sent along, or referred to, in the first chat in a conversation
+* Chats will be able to upload files that are specific to that chat
 
 ### Persistence of memory in a single chat
 
@@ -31,13 +38,12 @@
 
 ## Implementation Plan
 
-1. Align Requirements: confirm scope for instructions delivery, file sharing, chat memory handling, cross-chat summaries, and Markdown rendering options.
-2. Design Data Flow: map how instructions, files, and chat memories enter the system; define schemas and APIs for persistence and retrieval.
-3. Update Backend: extend conversation initialization to attach instructions, file references, and prior memory payloads; add summarization mode controls.
-4. Enhance Memory Layer: store per-chat transcripts and metadata; implement retrieval hooks that respect API capabilities (with/without native memory).
-5. Surface Cross-Chat Context: build registry of related chats; expose selection/injection mechanism during session start.
-6. Implement Summarization Options: add configuration to choose model/cost tier, execute summaries asynchronously, cache results, and expose toggles in UI/API.
-7. Expand Markdown Renderer: upgrade response pipeline to format Markdown, optionally include source blocks, and render sent messages with the same engine.
-8. QA & Tooling: write integration tests for initialization payloads, regression tests for summarization choices, and snapshot tests for Markdown output.
-9. Rollout & Docs: update user-facing documentation and developer guides; provide migration notes for new initialization payloads and configuration flags.
-10. Post-Launch Monitoring: instrument feature usage and error hooks, verify model cost impacts, and schedule feedback review after initial release.
+1. Gather Integration Details: review current model adapters and confirm connectivity requirements for local Ollama installs and routing hubs, including auth and transport nuances.
+2. Implement Ollama Adapter Updates: extend the model connector to target local and hub endpoints, expose configuration flags, and add smoke tests to validate prompt/response flow.
+3. Bootstrap Conversations: update chat initialization so the first message bundles project instructions and file summaries, and define payload contracts for downstream clients.
+4. Enhance File Handling: differentiate project-level files from chat uploads, ensure storage links are available during the first exchange, and document retention rules.
+5. Build Memory Persistence: design storage for per-chat transcripts, add serialization that replays memories when the API lacks native recall, and short-circuit when native memory exists.
+6. Surface Cross-Chat Context: create an index of related chats, implement selection heuristics, and inject summarized context during session startup when relevant.
+7. Add Summarization Controls: provide configuration for model tier selection, run summaries asynchronously with caching, and surface toggles via API and UI.
+8. Upgrade Markdown Rendering: wire a consistent renderer for responses and sent messages, add optional source view, and verify formatting in the display pipeline.
+9. Validate and Launch: expand automated coverage for initialization payloads, summarization choices, and Markdown output; refresh documentation, instrumentation, and support playbooks ahead of rollout.
