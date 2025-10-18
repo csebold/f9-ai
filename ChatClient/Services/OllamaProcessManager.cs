@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net.Http;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-
 namespace ChatClient.Services;
 
 public sealed class OllamaProcessManager : IOllamaProcessManager, IDisposable
@@ -14,6 +15,7 @@ public sealed class OllamaProcessManager : IOllamaProcessManager, IDisposable
     private readonly IBackgroundProcessService _backgroundProcessService;
     private readonly HttpClient _httpClient;
     private bool _disposed;
+    private readonly HashSet<int> _trackedProcessIds = new();
 
     public OllamaProcessManager(IBackgroundProcessService backgroundProcessService, HttpClient? httpClient = null)
     {
@@ -22,6 +24,8 @@ public sealed class OllamaProcessManager : IOllamaProcessManager, IDisposable
         {
             Timeout = ProbeTimeout
         };
+
+        _backgroundProcessService.ProcessChanged += OnBackgroundProcessChanged;
     }
 
     public async Task<OllamaProcessEnsureResult> EnsureServerAsync(string? endpoint, CancellationToken cancellationToken)
@@ -34,14 +38,28 @@ public sealed class OllamaProcessManager : IOllamaProcessManager, IDisposable
             throw new ArgumentException($"Invalid Ollama endpoint '{endpoint}'.", nameof(endpoint));
         }
 
+        var existingSnapshot = await _backgroundProcessService.GetSnapshotAsync("ollama-daemon", cancellationToken).ConfigureAwait(false);
+        if (existingSnapshot is not null && existingSnapshot.IsRunning)
+        {
+            TrackManagedProcess(existingSnapshot);
+            return new OllamaProcessEnsureResult(false, existingSnapshot);
+        }
+
+        if (existingSnapshot is not null && existingSnapshot.ProcessId is int stalePid)
+        {
+            UntrackProcess(stalePid);
+        }
+
         if (await IsOllamaRespondingAsync(endpointUri, cancellationToken).ConfigureAwait(false))
         {
-            return new OllamaProcessEnsureResult(true, null);
+            var externalSnapshot = await TryCreateExternalSnapshotAsync(endpointUri, cancellationToken).ConfigureAwait(false);
+            return new OllamaProcessEnsureResult(true, externalSnapshot);
         }
 
         var request = CreateRequest(endpointUri);
         var snapshot = await _backgroundProcessService.EnsureRunningAsync(request, cancellationToken).ConfigureAwait(false);
 
+        TrackManagedProcess(snapshot);
         return new OllamaProcessEnsureResult(false, snapshot);
     }
 
@@ -99,6 +117,218 @@ public sealed class OllamaProcessManager : IOllamaProcessManager, IDisposable
         }
     }
 
+    public async Task<bool> StopServerAsync(CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        var snapshot = await _backgroundProcessService.GetSnapshotAsync("ollama-daemon", cancellationToken).ConfigureAwait(false);
+        if (snapshot is null)
+        {
+            return false;
+        }
+
+        await _backgroundProcessService.StopAsync("ollama-daemon", cancellationToken).ConfigureAwait(false);
+        if (snapshot.ProcessId is int pid)
+        {
+            UntrackProcess(pid);
+        }
+        return true;
+    }
+
+    private void TrackManagedProcess(BackgroundProcessSnapshot snapshot)
+    {
+        if (!snapshot.ManagedByApplication)
+        {
+            return;
+        }
+
+        if (snapshot.ProcessId is not int pid || pid <= 0)
+        {
+            return;
+        }
+
+        _trackedProcessIds.Add(pid);
+        OllamaProcessRegistry.AddOrUpdate(pid, snapshot.LogPath);
+    }
+
+    private void UntrackProcess(int pid)
+    {
+        if (pid <= 0)
+        {
+            return;
+        }
+
+        if (_trackedProcessIds.Remove(pid))
+        {
+            OllamaProcessRegistry.Remove(pid);
+        }
+        else
+        {
+            OllamaProcessRegistry.Remove(pid);
+        }
+    }
+
+    private void OnBackgroundProcessChanged(object? sender, BackgroundProcessChangedEventArgs e)
+    {
+        if (!string.Equals(e.Snapshot.Id, "ollama-daemon", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (!e.Snapshot.IsRunning || e.Kind == BackgroundProcessChangeKind.Removed)
+        {
+            if (e.Snapshot.ProcessId is int pid)
+            {
+                UntrackProcess(pid);
+            }
+        }
+        else if (e.Snapshot.ManagedByApplication)
+        {
+            TrackManagedProcess(e.Snapshot);
+        }
+    }
+
+    private async Task<BackgroundProcessSnapshot?> TryCreateExternalSnapshotAsync(Uri endpoint, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "ollama",
+                ArgumentList = { "ps", "--json" },
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            var hostPart = endpoint.Host.Contains(':', StringComparison.Ordinal)
+                ? $"[{endpoint.Host}]"
+                : endpoint.Host;
+            startInfo.Environment["OLLAMA_HOST"] = $"{hostPart}:{endpoint.Port}";
+
+            using var process = Process.Start(startInfo);
+            if (process is null)
+            {
+                return CreateFallbackSnapshot();
+            }
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            await using var _ = cts.Token.Register(() =>
+            {
+                try
+                {
+                    if (!process.HasExited)
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                }
+                catch
+                {
+                }
+            });
+
+#if NET9_0_OR_GREATER
+            var output = await process.StandardOutput.ReadToEndAsync(cts.Token).ConfigureAwait(false);
+#else
+            var output = await process.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+#endif
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+
+            if (process.ExitCode != 0)
+            {
+                return CreateFallbackSnapshot();
+            }
+
+            if (string.IsNullOrWhiteSpace(output))
+            {
+                return CreateFallbackSnapshot();
+            }
+
+            using var document = JsonDocument.Parse(output);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("models", out var modelsElement) || modelsElement.ValueKind != JsonValueKind.Array)
+            {
+                return CreateFallbackSnapshot();
+            }
+
+            DateTimeOffset startedAt = DateTimeOffset.Now;
+            string statusMessage = "Detected external Ollama server.";
+            int? detectedPid = null;
+
+            foreach (var model in modelsElement.EnumerateArray())
+            {
+                if (model.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                if (model.TryGetProperty("pid", out var pidElement))
+                {
+                    if (pidElement.ValueKind == JsonValueKind.Number && pidElement.TryGetInt32(out var pidValue))
+                    {
+                        detectedPid = pidValue;
+                    }
+                }
+
+                if (model.TryGetProperty("started_at", out var startedAtElement) && startedAtElement.ValueKind == JsonValueKind.String)
+                {
+                    if (DateTimeOffset.TryParse(startedAtElement.GetString(), out var parsed))
+                    {
+                        startedAt = parsed;
+                    }
+                }
+
+                if (model.TryGetProperty("status", out var statusElement) && statusElement.ValueKind == JsonValueKind.String)
+                {
+                    var statusText = statusElement.GetString();
+                    if (!string.IsNullOrWhiteSpace(statusText))
+                    {
+                        statusMessage = $"External server: {statusText}";
+                    }
+                }
+
+                break;
+            }
+
+            return new BackgroundProcessSnapshot(
+                Id: "ollama-external",
+                DisplayName: "Ollama Server (external)",
+                Category: BackgroundProcessCategory.Server,
+                Command: "ollama",
+                Arguments: "serve",
+                LogPath: string.Empty,
+                StartedAt: startedAt,
+                ProcessId: detectedPid,
+                IsRunning: true,
+                IsHealthy: true,
+                ExitCode: null,
+                StatusMessage: statusMessage,
+                ManagedByApplication: false);
+        }
+        catch
+        {
+            return CreateFallbackSnapshot();
+        }
+
+        static BackgroundProcessSnapshot CreateFallbackSnapshot()
+        {
+            return new BackgroundProcessSnapshot(
+                Id: "ollama-external",
+                DisplayName: "Ollama Server (external)",
+                Category: BackgroundProcessCategory.Server,
+                Command: "ollama",
+                Arguments: "serve",
+                LogPath: string.Empty,
+                StartedAt: DateTimeOffset.Now,
+                ProcessId: null,
+                IsRunning: true,
+                IsHealthy: true,
+                ExitCode: null,
+                StatusMessage: "Detected external Ollama server.",
+                ManagedByApplication: false);
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -108,5 +338,11 @@ public sealed class OllamaProcessManager : IOllamaProcessManager, IDisposable
 
         _disposed = true;
         _httpClient.Dispose();
+        _backgroundProcessService.ProcessChanged -= OnBackgroundProcessChanged;
+        foreach (var pid in _trackedProcessIds)
+        {
+            OllamaProcessRegistry.Remove(pid);
+        }
+        _trackedProcessIds.Clear();
     }
 }

@@ -7,5 +7,14 @@ namespace ChatClient.Services;
 
 public interface IModelCatalogService
 {
-    Task<IReadOnlyList<string>> GetModelsAsync(LlmProvider provider, ProviderSettings providerSettings, CancellationToken cancellationToken);
+    Task<IReadOnlyList<ModelCatalogEntry>> GetModelsAsync(
+        LlmProvider provider,
+        ProviderSettings providerSettings,
+        CancellationToken cancellationToken);
+
+    Task DownloadModelAsync(
+        LlmProvider provider,
+        ProviderSettings providerSettings,
+        string modelId,
+        CancellationToken cancellationToken);
 }

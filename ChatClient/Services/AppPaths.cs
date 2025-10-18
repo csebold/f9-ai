@@ -56,4 +56,10 @@ public static class AppPaths
         Directory.CreateDirectory(logsDirectory);
         return logsDirectory;
     }
+
+    public static string GetOllamaProcessRegistryPath()
+    {
+        var baseDirectory = GetBaseDirectory();
+        return Path.Combine(baseDirectory, "ollama-processes.json");
+    }
 }

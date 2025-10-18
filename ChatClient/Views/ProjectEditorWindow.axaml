@@ -46,7 +46,7 @@
                Watermark="Optional - inherits default when blank"/>
 
       <TextBlock Text="Model Override"/>
-      <StackPanel Orientation="Horizontal" Spacing="8">
+      <WrapPanel ItemSpacing="8" VerticalAlignment="Center">
         <ComboBox Width="300"
                   ItemsSource="{Binding ModelOptions}"
                   SelectedItem="{Binding SelectedModelOption}">
@@ -56,9 +56,14 @@
             </DataTemplate>
           </ComboBox.ItemTemplate>
         </ComboBox>
+        <CheckBox Content="Recommended only"
+                  IsChecked="{Binding ShowOnlyRecommendedModels}"
+                 VerticalAlignment="Center"/>
         <Button Content="Refresh"
                 Command="{Binding FetchModelsCommand}"/>
-      </StackPanel>
+        <Button Content="Download"
+                Command="{Binding DownloadModelCommand}"/>
+      </WrapPanel>
       <ProgressBar IsIndeterminate="True"
                    IsVisible="{Binding IsBusy}"
                    Height="4"/>

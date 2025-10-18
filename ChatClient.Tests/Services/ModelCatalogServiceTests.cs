@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
@@ -37,7 +38,12 @@ public class ModelCatalogServiceTests
         Assert.Equal(new Uri("https://api.openai.com/v1/models"), capturedRequest!.RequestUri);
         Assert.Equal("Bearer", capturedRequest.Headers.Authorization?.Scheme);
         Assert.Equal("key", capturedRequest.Headers.Authorization?.Parameter);
-        Assert.Equal(new[] { "gpt-3.5", "gpt-4" }, models);
+        Assert.Equal(new[] { "gpt-3.5", "gpt-4" }, models.Select(m => m.Id));
+        Assert.All(models, m =>
+        {
+            Assert.True(m.IsInstalled);
+            Assert.False(m.IsDownloadable);
+        });
     }
 
     [Fact]
@@ -46,12 +52,21 @@ public class ModelCatalogServiceTests
         HttpRequestMessage? capturedRequest = null;
         var handler = new StubHttpMessageHandler(request =>
         {
-            capturedRequest = request;
+            if (request.RequestUri is not null &&
+                request.RequestUri.AbsolutePath.EndsWith("/api/tags", StringComparison.Ordinal))
+            {
+                capturedRequest ??= request;
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""
+                        {"models":[{"name":"llama3"},{"name":"wizard"}]}
+                        """)
+                };
+            }
+
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent("""
-                    {"models":[{"name":"llama3"},{"name":"wizard"}]}
-                    """)
+                Content = new StringContent("<html></html>")
             };
         });
 
@@ -66,7 +81,47 @@ public class ModelCatalogServiceTests
         Assert.NotNull(capturedRequest);
         Assert.Equal(new Uri("http://localhost:12345/api/tags"), capturedRequest!.RequestUri);
         Assert.Equal(HttpMethod.Get, capturedRequest.Method);
-        Assert.Equal(new[] { "llama3", "wizard" }, models);
+        Assert.Equal(new[] { "llama3", "wizard" }, models.Select(m => m.Id));
+    }
+
+    [Fact]
+    public async Task GetModelsAsync_Ollama_ReturnsInstalledWhenLibraryFails()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            if (request.RequestUri is not null &&
+                request.RequestUri.AbsolutePath.EndsWith("/api/tags", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""
+                        {"models":[{"name":"mixtral"},{"name":"local/custom"}]}
+                        """)
+                };
+            }
+
+            if (request.RequestUri is not null &&
+                request.RequestUri == new Uri("https://ollama.com/library"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.InternalServerError)
+                {
+                    Content = new StringContent("boom")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var service = new ModelCatalogService(new HttpClient(handler));
+
+        var models = await service.GetModelsAsync(
+            LlmProvider.Ollama,
+            new ProviderSettings { Endpoint = "http://localhost:11434/" },
+            CancellationToken.None);
+
+        Assert.Equal(new[] { "local/custom", "mixtral" }, models.Select(m => m.Id));
+        Assert.All(models, m => Assert.True(m.IsInstalled));
+        Assert.All(models, m => Assert.False(m.IsDownloadable));
     }
 
     [Fact]

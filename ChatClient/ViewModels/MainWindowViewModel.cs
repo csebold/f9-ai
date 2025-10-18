@@ -271,7 +271,21 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        _responseCancellation?.Cancel();
+        var cancellation = _responseCancellation;
+        if (cancellation is null || cancellation.IsCancellationRequested)
+        {
+            return;
+        }
+
+        try
+        {
+            cancellation.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
         StatusMessage = $"Canceling request to {CurrentProvider}...";
     }
 

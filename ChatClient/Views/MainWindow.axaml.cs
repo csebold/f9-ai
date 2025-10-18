@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -528,6 +530,9 @@ public partial class MainWindow : Window
         }
 
         var previousActiveId = _activeProject?.Id;
+        var previousProvider = _settings.Provider;
+        var previousOllamaModel = (_settings.Ollama.Model ?? string.Empty).Trim();
+        var previousOllamaEndpoint = NormalizeEndpoint(_settings.Ollama.Endpoint);
 
         var dialog = new SettingsWindow
         {
@@ -541,6 +546,20 @@ public partial class MainWindow : Window
         }
 
         _settings = result;
+        var newProvider = _settings.Provider;
+        var newOllamaModel = (_settings.Ollama.Model ?? string.Empty).Trim();
+        var newOllamaEndpoint = NormalizeEndpoint(_settings.Ollama.Endpoint);
+
+        var defaultOllamaChanged = newProvider == LlmProvider.Ollama &&
+                                   (previousProvider != LlmProvider.Ollama ||
+                                    !string.Equals(previousOllamaModel, newOllamaModel, StringComparison.Ordinal) ||
+                                    !string.Equals(previousOllamaEndpoint, newOllamaEndpoint, StringComparison.OrdinalIgnoreCase));
+
+        if (defaultOllamaChanged)
+        {
+            await EnsureOllamaServerForEndpointAsync(_settings.Ollama.Endpoint, "for default settings");
+        }
+
         _activeProject = string.IsNullOrWhiteSpace(previousActiveId)
             ? null
             : _settings.Projects.FirstOrDefault(p => string.Equals(p.Id, previousActiveId, StringComparison.Ordinal));
@@ -555,6 +574,10 @@ public partial class MainWindow : Window
         {
             return;
         }
+
+        var previousProvider = _activeProject.Provider;
+        var previousModel = (_activeProject.Model ?? string.Empty).Trim();
+        var previousEndpoint = NormalizeEndpoint(_activeProject.Endpoint);
 
         var dialog = new ProjectEditorWindow
         {
@@ -575,6 +598,17 @@ public partial class MainWindow : Window
 
         CopyProjectSettings(target, updated);
         ProjectWorkspace.EnsureWorkspace(target);
+
+        var projectModelChanged = target.Provider == LlmProvider.Ollama &&
+                                  (previousProvider != LlmProvider.Ollama ||
+                                   !string.Equals(previousModel, (target.Model ?? string.Empty).Trim(), StringComparison.Ordinal) ||
+                                   !string.Equals(previousEndpoint, NormalizeEndpoint(target.Endpoint), StringComparison.OrdinalIgnoreCase));
+
+        if (projectModelChanged)
+        {
+            var projectName = string.IsNullOrWhiteSpace(target.Name) ? "project" : $"project '{target.Name}'";
+            await EnsureOllamaServerForEndpointAsync(target.Endpoint, $"for {projectName}");
+        }
 
         _activeProject = target;
         RefreshProjectList();
@@ -719,63 +753,239 @@ public partial class MainWindow : Window
             registration = new LlmClientRegistration(new FallbackLlmClient(detail), provider, "Unavailable", "N/A", detail);
         }
 
-        _activeProject = project;
-        var projectKey = GetProjectKey(project);
-        _settings.ActiveProjectId = project?.Id;
-
-        var projectState = EnsureProjectSession(projectKey);
-
-        _settings.ActiveSessions.TryGetValue(projectKey, out var persistedSessionId);
-        var activeSessionId = ResolveActiveSessionId(projectState, persistedSessionId);
-        var activeSession = projectState.Sessions.First(s => string.Equals(s.Id, activeSessionId, StringComparison.Ordinal));
-
-        projectState.ActiveSessionId = activeSession.Id;
-        _settings.ActiveSessions[projectKey] = activeSession.Id;
-
-        var emitStatusMessage = emitStatusMessageOverride ?? !activeSession.Messages.Any();
-        var shouldPersistSessions = persist || isUpdate || emitStatusMessage;
-
-        _activeSession = activeSession;
-        _suppressMessageSync = true;
-        _viewModel.ResetMessages(activeSession.Messages, includeWelcomeWhenEmpty: true);
-        ResetAutoScroll(requestScroll: true);
-        SyncSessionWithViewModel();
-        _suppressMessageSync = false;
-
-        var projectName = project?.Name ?? DefaultProjectName;
-        var instructions = project?.Instructions ?? string.Empty;
-        var description = project?.Description ?? string.Empty;
-        var hasCustomProject = project is not null;
-
-        _viewModel.ChangeProject(registration, projectName, instructions, description, hasCustomProject, isUpdate, emitStatusMessage);
-
+        string? ollamaWarning = null;
+        string? ollamaError = null;
+        var attemptedOllamaStartup = false;
         if (registration.Provider == LlmProvider.Ollama)
         {
-            await EnsureOllamaRunningAsync(registration, project, CancellationToken.None);
+            var selectionResult = await EnsureOllamaModelSelectionAsync(registration, project, CancellationToken.None);
+            if (selectionResult.ErrorMessage is not null && selectionResult.IsConnectionFailure)
+            {
+                attemptedOllamaStartup = true;
+                await EnsureOllamaRunningAsync(registration, project, restart: false, CancellationToken.None);
+                selectionResult = await EnsureOllamaModelSelectionAsync(registration, project, CancellationToken.None);
+            }
+
+            if (selectionResult.ErrorMessage is not null)
+            {
+                if (selectionResult.IsConnectionFailure && attemptedOllamaStartup)
+                {
+                    ollamaError = $"{selectionResult.ErrorMessage} Attempted to launch Ollama automatically, but it still did not respond.";
+                }
+                else
+                {
+                    ollamaError = selectionResult.ErrorMessage;
+                }
+
+                registration = CreateOllamaFallbackRegistration(registration, ollamaError);
+            }
+            else
+            {
+                registration = selectionResult.Registration;
+                ollamaWarning = selectionResult.WarningMessage;
+            }
         }
 
-        RefreshProjectList();
-        RefreshSessionsForProject(projectKey, activeSession.Id);
-
-        if (shouldPersistSessions)
+        await Dispatcher.UIThread.InvokeAsync(async () =>
         {
-            await PersistSessionsAsync();
+            if (_viewModel is null)
+            {
+                return;
+            }
+
+            _activeProject = project;
+            var projectKey = GetProjectKey(project);
+            _settings.ActiveProjectId = project?.Id;
+
+            var projectState = EnsureProjectSession(projectKey);
+
+            _settings.ActiveSessions.TryGetValue(projectKey, out var persistedSessionId);
+            var activeSessionId = ResolveActiveSessionId(projectState, persistedSessionId);
+            var activeSession = projectState.Sessions.First(s => string.Equals(s.Id, activeSessionId, StringComparison.Ordinal));
+
+            projectState.ActiveSessionId = activeSession.Id;
+            _settings.ActiveSessions[projectKey] = activeSession.Id;
+
+            var emitStatusMessage = emitStatusMessageOverride ?? !activeSession.Messages.Any();
+            var shouldPersistSessions = persist || isUpdate || emitStatusMessage;
+
+            _activeSession = activeSession;
+            _suppressMessageSync = true;
+            _viewModel.ResetMessages(activeSession.Messages, includeWelcomeWhenEmpty: true);
+            ResetAutoScroll(requestScroll: true);
+            SyncSessionWithViewModel();
+            _suppressMessageSync = false;
+
+            var projectName = project?.Name ?? DefaultProjectName;
+            var instructions = project?.Instructions ?? string.Empty;
+            var description = project?.Description ?? string.Empty;
+            var hasCustomProject = project is not null;
+
+            var shouldRestartOllama = registration.Provider == LlmProvider.Ollama &&
+                                      _viewModel.CurrentProviderKind == LlmProvider.Ollama &&
+                                      !string.Equals(_viewModel.CurrentModel, registration.ModelId, StringComparison.Ordinal);
+
+            _viewModel.ChangeProject(registration, projectName, instructions, description, hasCustomProject, isUpdate, emitStatusMessage);
+
+            if (ollamaError is not null)
+            {
+                _viewModel.StatusMessage = ollamaError;
+                _viewModel.ErrorSummary = ollamaError;
+            }
+
+            if (registration.Provider == LlmProvider.Ollama)
+            {
+                await EnsureOllamaRunningAsync(registration, project, shouldRestartOllama, CancellationToken.None);
+            }
+
+            RefreshProjectList();
+            RefreshSessionsForProject(projectKey, activeSession.Id);
+
+            if (shouldPersistSessions)
+            {
+                await PersistSessionsAsync();
+            }
+            if (persist)
+            {
+                try
+                {
+                    await _settingsService.SaveAsync(_settings);
+                }
+                catch
+                {
+                    // Ignore persistence failures; user can retry later.
+                }
+            }
+        });
+
+        if (ollamaError is not null)
+        {
+            await PostSystemNoticeAsync(ollamaError, isError: true);
         }
-
-        if (persist)
+        else if (!string.IsNullOrWhiteSpace(ollamaWarning))
         {
-            try
-            {
-                await _settingsService.SaveAsync(_settings);
-            }
-            catch
-            {
-                // Ignore persistence failures; user can retry later.
-            }
+            await PostSystemNoticeAsync(ollamaWarning, isError: false);
         }
     }
 
-    private async Task EnsureOllamaRunningAsync(LlmClientRegistration registration, ProjectSettings? project, CancellationToken cancellationToken)
+    private static LlmClientRegistration CreateOllamaFallbackRegistration(LlmClientRegistration original, string message)
+    {
+        var fallback = new LlmClientRegistration(
+            new FallbackLlmClient(message),
+            original.Provider,
+            original.ProviderDisplayName,
+            "Unavailable",
+            message)
+        {
+            Endpoint = original.Endpoint
+        };
+
+        return fallback;
+    }
+
+    private readonly record struct OllamaSelectionResult(
+        LlmClientRegistration Registration,
+        string? WarningMessage,
+        string? ErrorMessage,
+        bool IsConnectionFailure);
+
+    private async Task<OllamaSelectionResult> EnsureOllamaModelSelectionAsync(LlmClientRegistration registration, ProjectSettings? project, CancellationToken cancellationToken)
+    {
+        var endpoint = ResolveOllamaEndpoint(registration, project) ?? string.Empty;
+        var providerSettings = new ProviderSettings
+        {
+            Endpoint = endpoint,
+            Model = registration.ModelId
+        };
+
+        IReadOnlyList<ModelCatalogEntry> models;
+        try
+        {
+            models = await _modelCatalogService.GetModelsAsync(LlmProvider.Ollama, providerSettings, cancellationToken).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            var endpointDisplay = string.IsNullOrWhiteSpace(endpoint)
+                ? "http://localhost:11434/"
+                : endpoint;
+            var detail = BuildOllamaConnectionHint(ex);
+            var message = $"Could not reach Ollama at {endpointDisplay}. {detail} Start the Ollama app or run 'ollama serve', then try again.";
+            return new OllamaSelectionResult(registration, null, message, true);
+        }
+        catch (Exception ex)
+        {
+            return new OllamaSelectionResult(registration, null, $"Failed to inspect Ollama models: {ex.Message}", false);
+        }
+
+        var installed = models
+            .Where(m => m.IsInstalled)
+            .ToList();
+
+        if (installed.Any(m => string.Equals(m.Id, registration.ModelId, StringComparison.OrdinalIgnoreCase)))
+        {
+            return new OllamaSelectionResult(registration, null, null, false);
+        }
+
+        if (installed.Count == 0)
+        {
+            var endpointDisplay = string.IsNullOrWhiteSpace(endpoint) ? "the configured endpoint" : endpoint;
+            var message = $"Model '{registration.ModelId}' is not installed and no Ollama models are available at {endpointDisplay}. Download a model with 'ollama pull <model>' or install one from Settings > Models before continuing.";
+            return new OllamaSelectionResult(registration, null, message, false);
+        }
+
+        var fallbackModel = installed[0].Id;
+        providerSettings.Model = fallbackModel;
+
+        var fallbackRegistration = LlmClientFactory.CreateOllamaClient(providerSettings);
+        var warning = $"Model '{registration.ModelId}' is not installed. Using '{fallbackModel}' instead.";
+        return new OllamaSelectionResult(fallbackRegistration, warning, null, false);
+    }
+
+    private static string BuildOllamaConnectionHint(HttpRequestException exception)
+    {
+        var detail = exception.InnerException switch
+        {
+            SocketException { SocketErrorCode: SocketError.ConnectionRefused } => "The connection was refused, which usually means the Ollama service is not running.",
+            SocketException { SocketErrorCode: SocketError.HostNotFound } => "The host name could not be resolved.",
+            SocketException { SocketErrorCode: SocketError.TimedOut } => "The request to Ollama timed out before it responded.",
+            _ => null
+        };
+
+        if (string.IsNullOrWhiteSpace(detail))
+        {
+            detail = string.IsNullOrWhiteSpace(exception.Message)
+                ? "The Ollama endpoint did not respond."
+                : exception.Message.Trim();
+        }
+
+        if (!detail.EndsWith(".", StringComparison.Ordinal))
+        {
+            detail += ".";
+        }
+
+        return detail;
+    }
+
+    private async Task PostSystemNoticeAsync(string message, bool isError)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            _viewModel.Messages.Add(new Message("System", message, DateTimeOffset.Now, MessageRole.System));
+            if (isError)
+            {
+                _viewModel.ErrorSummary = message;
+            }
+
+            _viewModel.StatusMessage = message;
+        });
+    }
+
+    private async Task EnsureOllamaRunningAsync(LlmClientRegistration registration, ProjectSettings? project, bool restart, CancellationToken cancellationToken)
     {
         var endpoint = ResolveOllamaEndpoint(registration, project);
 
@@ -790,13 +1000,70 @@ public partial class MainWindow : Window
 
         try
         {
-            await _ollamaProcessManager.EnsureServerAsync(endpoint, cancellationToken).ConfigureAwait(false);
+            var stopped = false;
+            if (restart)
+            {
+                stopped = await _ollamaProcessManager.StopServerAsync(cancellationToken).ConfigureAwait(false);
+                if (stopped)
+                {
+                    try
+                    {
+                        await Task.Delay(TimeSpan.FromMilliseconds(300), cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                }
+            }
+
+            OllamaProcessEnsureResult ensureResult;
+            try
+            {
+                ensureResult = await _ollamaProcessManager.EnsureServerAsync(endpoint, cancellationToken).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ex) when (restart && stopped && ex.Message.Contains("Failed to start process 'ollama'", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+
+                ensureResult = await _ollamaProcessManager.EnsureServerAsync(endpoint, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (_viewModel is not null && ensureResult.AlreadyRunningExternally && ensureResult.ManagedProcess is not null)
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    _viewModel.ApplyBackgroundProcessChange(ensureResult.ManagedProcess, BackgroundProcessChangeKind.Added);
+                });
+            }
 
             if (_viewModel is not null)
             {
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    _viewModel.StatusMessage = $"Ready - {registration.ProviderDisplayName} ({registration.ModelId})";
+                    if (ensureResult.ManagedProcess is { IsHealthy: false } snapshot)
+                    {
+                        var detail = snapshot.StatusMessage ?? "Ollama did not report ready before the timeout.";
+                        if (!string.IsNullOrWhiteSpace(snapshot.LogPath))
+                        {
+                            detail += $" See {snapshot.LogPath} for details.";
+                        }
+
+                        var message = $"Ollama server is running but not ready: {detail}";
+                        _viewModel.StatusMessage = message;
+                        _viewModel.ErrorSummary = message;
+                    }
+                    else
+                    {
+                        _viewModel.StatusMessage = $"Ready - {registration.ProviderDisplayName} ({registration.ModelId})";
+                    }
                 });
             }
         }
@@ -806,9 +1073,42 @@ public partial class MainWindow : Window
             {
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    _viewModel.ErrorSummary = $"Ollama startup failed: {ex.Message}";
+                    var message = $"Ollama startup failed: {ex.Message}";
+                    if (!message.EndsWith(".", StringComparison.Ordinal))
+                    {
+                        message += ".";
+                    }
+
+                    message += " Start the Ollama app and ensure at least one model is installed (for example, run 'ollama pull llama3').";
+                    _viewModel.ErrorSummary = message;
+                    _viewModel.StatusMessage = message;
                 });
             }
+        }
+    }
+
+    private async Task EnsureOllamaServerForEndpointAsync(string? endpoint, string contextDescription)
+    {
+        try
+        {
+            var normalizedEndpoint = string.IsNullOrWhiteSpace(endpoint) ? null : endpoint.Trim();
+            var ensureResult = await _ollamaProcessManager.EnsureServerAsync(normalizedEndpoint, CancellationToken.None).ConfigureAwait(false);
+
+            if (_viewModel is not null && ensureResult.AlreadyRunningExternally && ensureResult.ManagedProcess is not null)
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    _viewModel.ApplyBackgroundProcessChange(ensureResult.ManagedProcess, BackgroundProcessChangeKind.Added);
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await PostSystemNoticeAsync($"Failed to start Ollama {contextDescription}: {ex.Message}", isError: true);
         }
     }
 
@@ -825,6 +1125,13 @@ public partial class MainWindow : Window
         }
 
         return null;
+    }
+
+    private static string NormalizeEndpoint(string? endpoint)
+    {
+        return string.IsNullOrWhiteSpace(endpoint)
+            ? string.Empty
+            : endpoint.Trim().TrimEnd('/');
     }
 
     private void OnBackgroundProcessChanged(object? sender, BackgroundProcessChangedEventArgs e)

@@ -7,47 +7,15 @@
 - [x] Support local installations and routing hubs like Ollama
 - [x] If Ollama is not running then start it in the background while we're running
 - [x] Support showing a terminal where local tools or servers are running, actually multiple terminal support because we could be running multiple servers and tools at the same time; add this to the GUI with buttons marked with icons indicating if this is a server, an MCP, or what. We don't have to reinvent the wheel, each terminal can spawn a native terminal that is tailing the output of the server or tool or whatever that's running in another thread
+- [x] When Ollama is unavailable, keep prior chat history visible and present a clear provider error instead of an empty conversation
 
 #### Multiple models switching and downloading
 
-```python
-import requests
-from bs4 import BeautifulSoup
-
-# Step 1: Fetch library page
-url = "https://ollama.com/library"
-html = requests.get(url).text
-
-# Step 2: Parse model entries
-soup = BeautifulSoup(html, 'html.parser')
-model_cards = soup.find_all('a', class_='font-mono')
-
-# Step 3: Extract names
-all_models = [card.text.strip() for card in model_cards]
-
-# Step 4: Filter models known to work on Apple Silicon
-known_good = [
-    'llama3', 'llama3:70b', 'mistral', 'mixtral',
-    'codellama', 'codellama:34b-instruct',
-    'gemma', 'gemma:7b', 'phi', 'openchat', 'dolphin',
-    'tinyllama', 'orca-mini', 'llava'
-]
-
-compatible_models = [m for m in all_models if any(g in m for g in known_good)]
-
-# Output
-print("✅ Models likely to work well on Apple Silicon:")
-for m in compatible_models:
-    print(f"- {m}")
-```
-
-This is ChatGPT-5's suggestion as to how to guess what models work with Apple Silicon.
-
 - [x] Present refreshable provider-specific model lists in both global and project settings
-- [ ] Adapt this script to fetch https://ollama.com/library and get working models (natively if possible rather than using Python)
-- [ ] Have the model list indicate the ones you already have and the ones that you could download
-- [ ] Offer to download the model you want
-- [ ] Switching models should shut down the Ollama server and then start it back up again
+- [x] Replace the prototype script with a native catalog fetch that scrapes https://ollama.com/library, merges installed tags, and highlights Apple Silicon friendly models
+- [x] Have the model list indicate the ones you already have and the ones that you could download
+- [x] Offer to download the model you want
+- [x] Switching models should shut down the Ollama server and then start it back up again
 
 ## LLM Model Support
 
@@ -88,8 +56,8 @@ This is ChatGPT-5's suggestion as to how to guess what models work with Apple Si
 ## Implementation Plan
 
 1. ✅ **Unify model discovery**: expose refreshable provider model lists in global settings and per-project overrides; normalize provider inference when models or endpoints imply Ollama.
-2. 🔄 **Automated Ollama model catalog**: replace the Python example with a native fetcher that distinguishes installed versus available models and drives download/install prompts.
-3. 🔄 **Ollama lifecycle management**: detect missing daemon, start/stop it when switching models, and optionally surface the backing terminal output.
+2. ✅ **Automated Ollama model catalog**: native catalog service merges installed tags with the online library, flags recommended models, and drives download/install prompts.
+3. ✅ **Ollama lifecycle management**: detect missing daemon, start/stop it when switching models, and surface background process state/terminal access through the UI.
 4. 🔄 **Provider branding**: cache provider favicons, refresh them on startup, and display icons plus tooltips alongside the active model name.
 5. 🔄 **Conversation bootstrap**: attach project instructions and relevant file metadata to the first message for new chats.
 6. 🔄 **File handling**: separate project files from chat uploads, expose them for the LLM on demand, and manage retention policies.

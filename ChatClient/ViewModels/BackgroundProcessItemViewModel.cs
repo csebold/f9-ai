@@ -23,8 +23,8 @@ public sealed partial class BackgroundProcessItemViewModel : ObservableObject
         Id = snapshot.Id;
         Category = snapshot.Category;
 
-        OpenTerminalCommand = new AsyncRelayCommand(OpenTerminalAsync);
         UpdateFromSnapshot(snapshot);
+        OpenTerminalCommand = new AsyncRelayCommand(OpenTerminalAsync, CanOpenTerminal);
     }
 
     public string Id { get; }
@@ -87,14 +87,24 @@ public sealed partial class BackgroundProcessItemViewModel : ObservableObject
         LogPath = snapshot.LogPath;
         ExitCode = snapshot.ExitCode;
         ManagedByApplication = snapshot.ManagedByApplication;
+        OpenTerminalCommand?.NotifyCanExecuteChanged();
     }
 
     partial void OnIsRunningChanged(bool value) => OnPropertyChanged(nameof(StateText));
 
     partial void OnIsHealthyChanged(bool value) => OnPropertyChanged(nameof(StateText));
 
+    partial void OnManagedByApplicationChanged(bool value) => OpenTerminalCommand?.NotifyCanExecuteChanged();
+
+    private bool CanOpenTerminal() => ManagedByApplication && !string.IsNullOrWhiteSpace(LogPath);
+
     private async Task OpenTerminalAsync()
     {
+        if (!ManagedByApplication)
+        {
+            return;
+        }
+
         try
         {
             await _service.OpenTerminalAsync(Id, CancellationToken.None).ConfigureAwait(false);

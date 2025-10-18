@@ -33,7 +33,7 @@ public class SettingsViewModelTests
         var openRouterOption = viewModel.Providers.First(p => p.Provider == LlmProvider.OpenRouter);
         viewModel.SelectedProviderOption = openRouterOption;
         viewModel.OpenRouterApiKey = "new-router-key";
-        viewModel.SelectedModel = "openrouter/test-model";
+        viewModel.SelectedModelOption = CreateModelOption("openrouter/test-model");
 
         await viewModel.SaveCommand.ExecuteAsync(null);
 
@@ -64,7 +64,7 @@ public class SettingsViewModelTests
         viewModel.EnableSessionPersistence = false;
         viewModel.MaxSessionsPerProject = 3;
         viewModel.MaxMessagesPerSession = 42;
-        viewModel.SelectedModel = "gpt-4o-mini";
+        viewModel.SelectedModelOption = CreateModelOption("gpt-4o-mini");
 
         await viewModel.SaveCommand.ExecuteAsync(null);
 
@@ -91,7 +91,7 @@ public class SettingsViewModelTests
         var ollamaOption = viewModel.Providers.First(p => p.Provider == LlmProvider.Ollama);
         viewModel.SelectedProviderOption = ollamaOption;
         viewModel.OllamaEndpoint = "http://localhost:12345/";
-        viewModel.SelectedModel = "llama3.1";
+        viewModel.SelectedModelOption = CreateModelOption("llama3.1");
 
         await viewModel.SaveCommand.ExecuteAsync(null);
 
@@ -118,7 +118,7 @@ public class SettingsViewModelTests
         var ollamaOption = viewModel.Providers.First(p => p.Provider == LlmProvider.Ollama);
         viewModel.SelectedProviderOption = ollamaOption;
         viewModel.OllamaEndpoint = string.Empty;
-        viewModel.SelectedModel = "llama3";
+        viewModel.SelectedModelOption = CreateModelOption("llama3");
 
         Assert.False(viewModel.SaveCommand.CanExecute(null));
 
@@ -144,7 +144,7 @@ public class SettingsViewModelTests
         var anthropicOption = viewModel.Providers.First(p => p.Provider == LlmProvider.Anthropic);
         viewModel.SelectedProviderOption = anthropicOption;
         viewModel.AnthropicApiKey = "anthropic-updated";
-        viewModel.SelectedModel = "claude-3-sonnet";
+        viewModel.SelectedModelOption = CreateModelOption("claude-3-sonnet");
 
         await viewModel.SaveCommand.ExecuteAsync(null);
 
@@ -172,7 +172,7 @@ public class SettingsViewModelTests
         var viewModel = new SettingsViewModel(settingsService, modelCatalogService, settings, sessionService);
 
         viewModel.OpenAiApiKey = "openai-updated";
-        viewModel.SelectedModel = "gpt-4o-mini";
+        viewModel.SelectedModelOption = CreateModelOption("gpt-4o-mini");
 
         await viewModel.SaveCommand.ExecuteAsync(null);
 
@@ -201,10 +201,11 @@ public class SettingsViewModelTests
 
         await viewModel.FetchModelsCommand.ExecuteAsync(null);
 
-        Assert.Equal(2, viewModel.AvailableModels.Count);
-        Assert.Contains("gpt-4o-mini", viewModel.AvailableModels);
-        Assert.Contains("gpt-4o", viewModel.AvailableModels);
-        Assert.False(string.IsNullOrWhiteSpace(viewModel.SelectedModel));
+        Assert.Equal(2, viewModel.AvailableModelOptions.Count);
+        Assert.Contains("gpt-4o-mini", viewModel.AvailableModelOptions.Select(m => m.ModelId));
+        Assert.Contains("gpt-4o", viewModel.AvailableModelOptions.Select(m => m.ModelId));
+        Assert.NotNull(viewModel.SelectedModelOption);
+        Assert.False(string.IsNullOrWhiteSpace(viewModel.SelectedModelOption?.ModelId));
     }
 
     [Fact]
@@ -227,6 +228,9 @@ public class SettingsViewModelTests
         Assert.Contains("purged", viewModel.StatusMessage, StringComparison.OrdinalIgnoreCase);
     }
 
+    private static SettingsViewModel.ModelOption CreateModelOption(string modelId) =>
+        new(modelId, modelId, false, false, false);
+
     private sealed class RecordingSettingsService : ISettingsService
     {
         public AppSettings? LastSaved { get; private set; }
@@ -243,20 +247,28 @@ public class SettingsViewModelTests
 
     private sealed class StubModelCatalogService : IModelCatalogService
     {
-        private readonly IReadOnlyList<string> _models;
+        private readonly IReadOnlyList<ModelCatalogEntry> _models;
 
         public StubModelCatalogService()
-            : this(new List<string>())
+            : this(Array.Empty<ModelCatalogEntry>())
         {
         }
 
         public StubModelCatalogService(IReadOnlyList<string> models)
+            : this(models.Select(id => new ModelCatalogEntry(id, true, false, false)).ToArray())
+        {
+        }
+
+        public StubModelCatalogService(IReadOnlyList<ModelCatalogEntry> models)
         {
             _models = models;
         }
 
-        public Task<IReadOnlyList<string>> GetModelsAsync(LlmProvider provider, ProviderSettings providerSettings, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<ModelCatalogEntry>> GetModelsAsync(LlmProvider provider, ProviderSettings providerSettings, CancellationToken cancellationToken)
             => Task.FromResult(_models);
+
+        public Task DownloadModelAsync(LlmProvider provider, ProviderSettings providerSettings, string modelId, CancellationToken cancellationToken)
+            => Task.CompletedTask;
     }
 
     private sealed class StubSessionPersistenceService : ISessionPersistenceService

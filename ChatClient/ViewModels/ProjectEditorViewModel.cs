@@ -17,7 +17,7 @@ public partial class ProjectEditorViewModel : ObservableObject
     private readonly AppSettings _defaults;
     private readonly bool _isNewProject;
     private readonly IModelCatalogService _modelCatalogService;
-    private readonly Dictionary<LlmProvider, IReadOnlyList<string>> _modelCache = new();
+    private readonly Dictionary<LlmProvider, IReadOnlyList<ModelCatalogEntry>> _modelCache = new();
     private bool _isInitialized;
     private LlmProvider _currentProvider;
 
@@ -34,6 +34,7 @@ public partial class ProjectEditorViewModel : ObservableObject
         SaveCommand = new RelayCommand(Save, CanSave);
         CancelCommand = new RelayCommand(InvokeCancelled);
         FetchModelsCommand = new AsyncRelayCommand(FetchModelsAsync, CanFetchModels);
+        DownloadModelCommand = new AsyncRelayCommand(DownloadModelAsync, CanDownloadModel);
 
         Name = _workingCopy.Name;
         Description = _workingCopy.Description;
@@ -51,6 +52,7 @@ public partial class ProjectEditorViewModel : ObservableObject
         _currentProvider = GetEffectiveProvider();
         _isInitialized = true;
 
+        ShowOnlyRecommendedModels = true;
         LoadModelsFromCache(GetEffectiveProvider());
         FetchModelsCommand.NotifyCanExecuteChanged();
     }
@@ -60,6 +62,8 @@ public partial class ProjectEditorViewModel : ObservableObject
     public ObservableCollection<ModelOption> ModelOptions { get; }
 
     public IAsyncRelayCommand FetchModelsCommand { get; }
+
+    public IAsyncRelayCommand DownloadModelCommand { get; }
 
     public IRelayCommand SaveCommand { get; }
 
@@ -103,6 +107,9 @@ public partial class ProjectEditorViewModel : ObservableObject
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;
+
+    [ObservableProperty]
+    private bool _showOnlyRecommendedModels = true;
 
     private bool CanSave() => !IsBusy && !string.IsNullOrWhiteSpace(Name);
 
@@ -149,6 +156,7 @@ public partial class ProjectEditorViewModel : ObservableObject
             IsBusy = true;
             StatusMessage = $"Loading models for {GetProviderDisplayName(GetEffectiveProvider())}...";
             FetchModelsCommand.NotifyCanExecuteChanged();
+            DownloadModelCommand.NotifyCanExecuteChanged();
             SaveCommand.NotifyCanExecuteChanged();
 
             var provider = GetEffectiveProvider();
@@ -167,6 +175,63 @@ public partial class ProjectEditorViewModel : ObservableObject
         {
             IsBusy = false;
             FetchModelsCommand.NotifyCanExecuteChanged();
+            DownloadModelCommand.NotifyCanExecuteChanged();
+            SaveCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    private bool CanDownloadModel()
+    {
+        if (IsBusy)
+        {
+            return false;
+        }
+
+        var provider = GetEffectiveProvider();
+        if (provider != LlmProvider.Ollama)
+        {
+            return false;
+        }
+
+        return SelectedModelOption is { CanDownload: true };
+    }
+
+    private async Task DownloadModelAsync()
+    {
+        var modelId = SelectedModelOption?.ModelId;
+        if (string.IsNullOrWhiteSpace(modelId))
+        {
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            StatusMessage = $"Downloading {modelId}...";
+            FetchModelsCommand.NotifyCanExecuteChanged();
+            DownloadModelCommand.NotifyCanExecuteChanged();
+            SaveCommand.NotifyCanExecuteChanged();
+
+            var provider = GetEffectiveProvider();
+            var providerSettings = CreateProviderSettingsSnapshot(provider);
+            await _modelCatalogService.DownloadModelAsync(provider, providerSettings, modelId, CancellationToken.None);
+
+            StatusMessage = $"Downloaded {modelId}. Refreshing catalog...";
+            var models = await _modelCatalogService.GetModelsAsync(provider, providerSettings, CancellationToken.None);
+            _modelCache[provider] = models;
+
+            UpdateModelOptions(models);
+            StatusMessage = $"Model {modelId} ready.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Failed to download model: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+            FetchModelsCommand.NotifyCanExecuteChanged();
+            DownloadModelCommand.NotifyCanExecuteChanged();
             SaveCommand.NotifyCanExecuteChanged();
         }
     }
@@ -196,6 +261,7 @@ public partial class ProjectEditorViewModel : ObservableObject
         LoadModelsFromCache(newProvider);
 
         FetchModelsCommand.NotifyCanExecuteChanged();
+        DownloadModelCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnSelectedModelOptionChanged(ModelOption? value)
@@ -206,6 +272,8 @@ public partial class ProjectEditorViewModel : ObservableObject
         }
 
         Model = value?.ModelId ?? string.Empty;
+        DownloadModelCommand.NotifyCanExecuteChanged();
+        SaveCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnApiKeyChanged(string value)
@@ -216,6 +284,7 @@ public partial class ProjectEditorViewModel : ObservableObject
         }
 
         FetchModelsCommand.NotifyCanExecuteChanged();
+        DownloadModelCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnEndpointChanged(string value)
@@ -226,6 +295,7 @@ public partial class ProjectEditorViewModel : ObservableObject
         }
 
         FetchModelsCommand.NotifyCanExecuteChanged();
+        DownloadModelCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnIsBusyChanged(bool value)
@@ -236,7 +306,18 @@ public partial class ProjectEditorViewModel : ObservableObject
         }
 
         FetchModelsCommand.NotifyCanExecuteChanged();
+        DownloadModelCommand.NotifyCanExecuteChanged();
         SaveCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnShowOnlyRecommendedModelsChanged(bool value)
+    {
+        if (!_isInitialized)
+        {
+            return;
+        }
+
+        LoadModelsFromCache(GetEffectiveProvider());
     }
 
     private ProjectProviderOption ResolveSelectedProvider(LlmProvider? provider)
@@ -264,7 +345,7 @@ public partial class ProjectEditorViewModel : ObservableObject
         }
     }
 
-    private void UpdateModelOptions(IReadOnlyList<string> models)
+    private void UpdateModelOptions(IReadOnlyList<ModelCatalogEntry> models)
     {
         RefreshDefaultModelOption();
 
@@ -273,9 +354,30 @@ public partial class ProjectEditorViewModel : ObservableObject
             ModelOptions.RemoveAt(i);
         }
 
-        foreach (var model in models)
+        var filtered = FilterModelsForDisplay(models);
+        var installed = filtered.Where(m => m.IsInstalled)
+            .OrderBy(m => m.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var others = filtered.Where(m => !m.IsInstalled)
+            .OrderBy(m => m.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in installed)
         {
-            ModelOptions.Add(new ModelOption(model, model));
+            if (seen.Add(entry.Id))
+            {
+                ModelOptions.Add(new ModelOption(entry.Id, BuildDisplayName(entry), entry.IsInstalled, entry.IsDownloadable, entry.IsRecommended));
+            }
+        }
+
+        foreach (var entry in others)
+        {
+            if (seen.Add(entry.Id))
+            {
+                ModelOptions.Add(new ModelOption(entry.Id, BuildDisplayName(entry), entry.IsInstalled, entry.IsDownloadable, entry.IsRecommended));
+            }
         }
 
         if (string.IsNullOrWhiteSpace(Model))
@@ -290,7 +392,7 @@ public partial class ProjectEditorViewModel : ObservableObject
 
         if (existing.ModelId is null)
         {
-            var customOption = new ModelOption(Model, Model);
+            var customOption = CreateCustomModelOption(Model);
             ModelOptions.Add(customOption);
             SelectedModelOption = customOption;
         }
@@ -298,6 +400,18 @@ public partial class ProjectEditorViewModel : ObservableObject
         {
             SelectedModelOption = existing;
         }
+    }
+
+    private IReadOnlyList<ModelCatalogEntry> FilterModelsForDisplay(IReadOnlyList<ModelCatalogEntry> models)
+    {
+        if (!ShowOnlyRecommendedModels)
+        {
+            return models;
+        }
+
+        return models
+            .Where(m => m.IsInstalled || m.IsRecommended)
+            .ToArray();
     }
 
     private void ResetModelOptions()
@@ -311,7 +425,7 @@ public partial class ProjectEditorViewModel : ObservableObject
             return;
         }
 
-        var customOption = new ModelOption(Model, Model);
+        var customOption = CreateCustomModelOption(Model);
         ModelOptions.Add(customOption);
         SelectedModelOption = customOption;
     }
@@ -390,7 +504,40 @@ public partial class ProjectEditorViewModel : ObservableObject
     private ModelOption CreateDefaultModelOption()
     {
         var providerDisplay = GetProviderDisplayName(GetEffectiveProvider());
-        return new ModelOption(null, $"Use default ({providerDisplay})");
+        return new ModelOption(null, $"Use default ({providerDisplay})", false, false, false);
+    }
+
+    private static ModelOption CreateCustomModelOption(string modelId)
+    {
+        var trimmed = modelId?.Trim() ?? string.Empty;
+        return new ModelOption(trimmed, $"{trimmed} (custom)", false, false, false);
+    }
+
+    private static string BuildDisplayName(ModelCatalogEntry entry)
+    {
+        var annotations = new List<string>();
+        if (entry.IsInstalled)
+        {
+            annotations.Add("installed");
+        }
+
+        if (!entry.IsInstalled && entry.IsDownloadable)
+        {
+            annotations.Add("available");
+        }
+        else if (entry.IsInstalled && entry.IsDownloadable)
+        {
+            annotations.Add("update");
+        }
+
+        if (entry.IsRecommended)
+        {
+            annotations.Add("recommended");
+        }
+
+        return annotations.Count == 0
+            ? entry.Id
+            : $"{entry.Id} ({string.Join(", ", annotations)})";
     }
 
     private static ProjectSettings Clone(ProjectSettings source)
@@ -413,5 +560,8 @@ public partial class ProjectEditorViewModel : ObservableObject
 
     public readonly record struct ProjectProviderOption(LlmProvider? Provider, string DisplayName);
 
-    public readonly record struct ModelOption(string? ModelId, string DisplayName);
+    public readonly record struct ModelOption(string? ModelId, string DisplayName, bool IsInstalled, bool IsDownloadable, bool IsRecommended)
+    {
+        public bool CanDownload => !IsInstalled && IsDownloadable && !string.IsNullOrWhiteSpace(ModelId);
+    }
 }

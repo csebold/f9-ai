@@ -19,7 +19,7 @@ public partial class SettingsViewModel : ObservableObject
     private readonly IModelCatalogService _modelCatalogService;
     private readonly ISessionPersistenceService _sessionPersistenceService;
     private readonly AppSettings _workingCopy;
-    private readonly Dictionary<LlmProvider, IReadOnlyList<string>> _modelCache = new();
+    private readonly Dictionary<LlmProvider, IReadOnlyList<ModelCatalogEntry>> _modelCache = new();
     private bool _isInitialized;
 
     public SettingsViewModel(
@@ -41,7 +41,7 @@ public partial class SettingsViewModel : ObservableObject
             new ProviderOption(LlmProvider.Ollama, "Ollama")
         });
 
-        AvailableModels = new ObservableCollection<string>();
+        AvailableModelOptions = new ObservableCollection<ModelOption>();
         SendActivationOptions = new ObservableCollection<SendActivationOption>(CreateSendActivationOptions());
 
         OpenAiApiKey = _workingCopy.OpenAi.ApiKey;
@@ -63,7 +63,11 @@ public partial class SettingsViewModel : ObservableObject
             SelectedProviderOption = Providers[0];
         }
 
-        SelectedModel = _workingCopy.GetProviderSettings(CurrentProvider).Model;
+        var initialModelId = _workingCopy.GetProviderSettings(CurrentProvider).Model;
+        SelectedModelOption = string.IsNullOrWhiteSpace(initialModelId)
+            ? null
+            : ModelOption.CreateCustom(initialModelId);
+
         SelectedSendActivationOption = SendActivationOptions.FirstOrDefault(option => option.Activation == _workingCopy.ChatInput.SendActivation);
         if (SelectedSendActivationOption == default)
         {
@@ -71,17 +75,19 @@ public partial class SettingsViewModel : ObservableObject
         }
 
         FetchModelsCommand = new AsyncRelayCommand(FetchModelsAsync, CanFetchModels);
+        DownloadModelCommand = new AsyncRelayCommand(DownloadSelectedModelAsync, CanDownloadSelectedModel);
         SaveCommand = new AsyncRelayCommand(SaveAsync, CanSave);
         CancelCommand = new RelayCommand(InvokeCancelled);
         PurgeChatsCommand = new AsyncRelayCommand(PurgeChatsAsync, CanPurgeChats);
 
+        ShowOnlyRecommendedModels = true;
         _isInitialized = true;
         LoadModelsFromCache(CurrentProvider);
     }
 
     public ObservableCollection<ProviderOption> Providers { get; }
 
-    public ObservableCollection<string> AvailableModels { get; }
+    public ObservableCollection<ModelOption> AvailableModelOptions { get; }
 
     public ObservableCollection<SendActivationOption> SendActivationOptions { get; }
 
@@ -93,7 +99,7 @@ public partial class SettingsViewModel : ObservableObject
     private ProviderOption _selectedProviderOption;
 
     [ObservableProperty]
-    private string _selectedModel = string.Empty;
+    private ModelOption? _selectedModelOption;
 
     [ObservableProperty]
     private string _openAiApiKey = string.Empty;
@@ -125,7 +131,12 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private SendActivationOption _selectedSendActivationOption;
 
+    [ObservableProperty]
+    private bool _showOnlyRecommendedModels = true;
+
     public IAsyncRelayCommand FetchModelsCommand { get; }
+
+    public IAsyncRelayCommand DownloadModelCommand { get; }
 
     public IAsyncRelayCommand SaveCommand { get; }
 
@@ -149,6 +160,21 @@ public partial class SettingsViewModel : ObservableObject
         };
     }
 
+    private bool CanDownloadSelectedModel()
+    {
+        if (IsBusy)
+        {
+            return false;
+        }
+
+        if (CurrentProvider != LlmProvider.Ollama)
+        {
+            return false;
+        }
+
+        return SelectedModelOption is { CanDownload: true };
+    }
+
     private bool CanSave()
     {
         if (IsBusy)
@@ -170,7 +196,7 @@ public partial class SettingsViewModel : ObservableObject
             return false;
         }
 
-        return !string.IsNullOrWhiteSpace(SelectedModel);
+        return !string.IsNullOrWhiteSpace(SelectedModelOption?.ModelId);
     }
 
     private bool CanPurgeChats() => !IsBusy;
@@ -197,6 +223,43 @@ public partial class SettingsViewModel : ObservableObject
         {
             IsBusy = false;
             FetchModelsCommand.NotifyCanExecuteChanged();
+            DownloadModelCommand.NotifyCanExecuteChanged();
+            SaveCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    private async Task DownloadSelectedModelAsync()
+    {
+        var target = SelectedModelOption;
+        if (target is null)
+        {
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            StatusMessage = $"Downloading {target.ModelId}...";
+
+            var providerSettings = CreateProviderSettingsSnapshot(CurrentProvider);
+            await _modelCatalogService.DownloadModelAsync(CurrentProvider, providerSettings, target.ModelId, CancellationToken.None);
+
+            StatusMessage = $"Downloaded {target.ModelId}. Refreshing catalog...";
+            var models = await _modelCatalogService.GetModelsAsync(CurrentProvider, providerSettings, CancellationToken.None);
+            _modelCache[CurrentProvider] = models;
+
+            UpdateAvailableModels(models, target.ModelId);
+            StatusMessage = $"Model {target.ModelId} ready.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Failed to download model: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+            FetchModelsCommand.NotifyCanExecuteChanged();
+            DownloadModelCommand.NotifyCanExecuteChanged();
             SaveCommand.NotifyCanExecuteChanged();
         }
     }
@@ -220,6 +283,7 @@ public partial class SettingsViewModel : ObservableObject
             IsBusy = false;
             PurgeChatsCommand.NotifyCanExecuteChanged();
             FetchModelsCommand.NotifyCanExecuteChanged();
+            DownloadModelCommand.NotifyCanExecuteChanged();
             SaveCommand.NotifyCanExecuteChanged();
         }
     }
@@ -233,7 +297,7 @@ public partial class SettingsViewModel : ObservableObject
 
             _workingCopy.Provider = CurrentProvider;
             var providerSettings = _workingCopy.GetProviderSettings(CurrentProvider);
-            providerSettings.Model = SelectedModel ?? string.Empty;
+            providerSettings.Model = SelectedModelOption?.ModelId ?? string.Empty;
             if (CurrentProvider == LlmProvider.Ollama)
             {
                 providerSettings.Endpoint = string.IsNullOrWhiteSpace(OllamaEndpoint)
@@ -257,6 +321,7 @@ public partial class SettingsViewModel : ObservableObject
         {
             IsBusy = false;
             SaveCommand.NotifyCanExecuteChanged();
+            DownloadModelCommand.NotifyCanExecuteChanged();
         }
     }
 
@@ -268,7 +333,7 @@ public partial class SettingsViewModel : ObservableObject
         return new ProviderSettings
         {
             ApiKey = (GetApiKeyForProvider(provider) ?? string.Empty).Trim(),
-            Model = working.Model ?? string.Empty,
+            Model = SelectedModelOption?.ModelId ?? working.Model ?? string.Empty,
             Endpoint = provider == LlmProvider.Ollama
                 ? (OllamaEndpoint ?? string.Empty).Trim()
                 : working.Endpoint ?? string.Empty
@@ -284,25 +349,54 @@ public partial class SettingsViewModel : ObservableObject
             _ => OpenAiApiKey
         };
 
-    private void UpdateAvailableModels(IReadOnlyList<string> models, string preferredModel)
+    private void UpdateAvailableModels(IReadOnlyList<ModelCatalogEntry> models, string preferredModel)
     {
-        AvailableModels.Clear();
+        AvailableModelOptions.Clear();
 
-        foreach (var model in models)
+        var filtered = FilterModelsForDisplay(models);
+        var installed = filtered.Where(m => m.IsInstalled)
+            .OrderBy(m => m.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var others = filtered.Where(m => !m.IsInstalled)
+            .OrderBy(m => m.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in installed)
         {
-            AvailableModels.Add(model);
+            if (seen.Add(entry.Id))
+            {
+                AvailableModelOptions.Add(ModelOption.FromEntry(entry));
+            }
         }
 
-        if (models.Count == 0)
+        foreach (var entry in others)
         {
-            SelectedModel = string.Empty;
-            return;
+            if (seen.Add(entry.Id))
+            {
+                AvailableModelOptions.Add(ModelOption.FromEntry(entry));
+            }
         }
 
-        var defaultModel = string.IsNullOrWhiteSpace(preferredModel) ? models[0] : preferredModel;
-        SelectedModel = models.Contains(defaultModel, StringComparer.OrdinalIgnoreCase)
-            ? defaultModel
-            : models[0];
+        ModelOption? selected = null;
+        if (!string.IsNullOrWhiteSpace(preferredModel))
+        {
+            selected = AvailableModelOptions.FirstOrDefault(option =>
+                string.Equals(option.ModelId, preferredModel, StringComparison.OrdinalIgnoreCase));
+            if (selected is null)
+            {
+                selected = ModelOption.CreateCustom(preferredModel);
+                AvailableModelOptions.Add(selected);
+            }
+        }
+
+        if (selected is null && AvailableModelOptions.Count > 0)
+        {
+            selected = AvailableModelOptions[0];
+        }
+
+        SelectedModelOption = selected;
     }
 
     private void LoadModelsFromCache(LlmProvider provider)
@@ -313,18 +407,31 @@ public partial class SettingsViewModel : ObservableObject
         }
         else
         {
-            AvailableModels.Clear();
-            var model = _workingCopy.GetProviderSettings(provider).Model;
-            if (!string.IsNullOrWhiteSpace(model))
+            AvailableModelOptions.Clear();
+            var modelId = _workingCopy.GetProviderSettings(provider).Model;
+            if (!string.IsNullOrWhiteSpace(modelId))
             {
-                AvailableModels.Add(model);
-                SelectedModel = model;
+                var option = ModelOption.CreateCustom(modelId);
+                AvailableModelOptions.Add(option);
+                SelectedModelOption = option;
             }
             else
             {
-                SelectedModel = string.Empty;
+                SelectedModelOption = null;
             }
         }
+    }
+
+    private IReadOnlyList<ModelCatalogEntry> FilterModelsForDisplay(IReadOnlyList<ModelCatalogEntry> models)
+    {
+        if (!ShowOnlyRecommendedModels)
+        {
+            return models;
+        }
+
+        return models
+            .Where(m => m.IsInstalled || m.IsRecommended)
+            .ToArray();
     }
 
     private static string GetProviderDisplayName(LlmProvider provider) =>
@@ -429,24 +536,24 @@ public partial class SettingsViewModel : ObservableObject
             return;
         }
 
-        var provider = value.Provider;
-        var providerSettings = _workingCopy.GetProviderSettings(provider);
-        SelectedModel = providerSettings.Model;
-        LoadModelsFromCache(provider);
+        LoadModelsFromCache(value.Provider);
 
         FetchModelsCommand.NotifyCanExecuteChanged();
+        DownloadModelCommand.NotifyCanExecuteChanged();
         SaveCommand.NotifyCanExecuteChanged();
     }
 
-    partial void OnSelectedModelChanged(string value)
+    partial void OnSelectedModelOptionChanged(ModelOption? value)
     {
         if (!_isInitialized)
         {
             return;
         }
 
-        var providerSettings = _workingCopy.GetProviderSettings(CurrentProvider);
-        providerSettings.Model = value ?? string.Empty;
+        var modelId = value?.ModelId ?? string.Empty;
+        _workingCopy.GetProviderSettings(CurrentProvider).Model = modelId;
+
+        DownloadModelCommand.NotifyCanExecuteChanged();
         SaveCommand.NotifyCanExecuteChanged();
     }
 
@@ -506,8 +613,71 @@ public partial class SettingsViewModel : ObservableObject
 
         _workingCopy.Ollama.Endpoint = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
         FetchModelsCommand.NotifyCanExecuteChanged();
+        DownloadModelCommand.NotifyCanExecuteChanged();
         SaveCommand.NotifyCanExecuteChanged();
     }
 
+    partial void OnShowOnlyRecommendedModelsChanged(bool value)
+    {
+        if (!_isInitialized)
+        {
+            return;
+        }
+
+        if (_modelCache.TryGetValue(CurrentProvider, out var cachedModels))
+        {
+            UpdateAvailableModels(cachedModels, _workingCopy.GetProviderSettings(CurrentProvider).Model);
+        }
+        else
+        {
+            LoadModelsFromCache(CurrentProvider);
+        }
+    }
+
     public readonly record struct ProviderOption(LlmProvider Provider, string DisplayName);
+
+    public sealed record ModelOption(string ModelId, string DisplayName, bool IsInstalled, bool IsDownloadable, bool IsRecommended)
+    {
+        public bool CanDownload => !IsInstalled && IsDownloadable && !string.IsNullOrWhiteSpace(ModelId);
+
+        public static ModelOption FromEntry(ModelCatalogEntry entry)
+        {
+            var annotations = new List<string>();
+            if (entry.IsInstalled)
+            {
+                annotations.Add("installed");
+            }
+
+            if (!entry.IsInstalled && entry.IsDownloadable)
+            {
+                annotations.Add("available");
+            }
+            else if (entry.IsInstalled && entry.IsDownloadable)
+            {
+                annotations.Add("update");
+            }
+
+            if (entry.IsRecommended)
+            {
+                annotations.Add("recommended");
+            }
+
+            var display = annotations.Count == 0
+                ? entry.Id
+                : $"{entry.Id} ({string.Join(", ", annotations)})";
+
+            return new ModelOption(entry.Id, display, entry.IsInstalled, entry.IsDownloadable, entry.IsRecommended);
+        }
+
+        public static ModelOption CreateCustom(string modelId)
+        {
+            var trimmed = modelId?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(trimmed))
+            {
+                throw new ArgumentException("Model id must be provided.", nameof(modelId));
+            }
+
+            return new ModelOption(trimmed, $"{trimmed} (custom)", false, false, false);
+        }
+    }
 }

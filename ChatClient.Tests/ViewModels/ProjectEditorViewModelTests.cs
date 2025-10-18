@@ -127,9 +127,13 @@ public class ProjectEditorViewModelTests
         Assert.Equal(string.Empty, viewModel.Model);
         Assert.Null(viewModel.SelectedModelOption?.ModelId);
     }
+
     private sealed class StubModelCatalogService : IModelCatalogService
     {
-        public Task<IReadOnlyList<string>> GetModelsAsync(LlmProvider provider, ProviderSettings providerSettings, CancellationToken cancellationToken)
-            => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+        public Task<IReadOnlyList<ModelCatalogEntry>> GetModelsAsync(LlmProvider provider, ProviderSettings providerSettings, CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<ModelCatalogEntry>>(Array.Empty<ModelCatalogEntry>());
+
+        public Task DownloadModelAsync(LlmProvider provider, ProviderSettings providerSettings, string modelId, CancellationToken cancellationToken)
+            => Task.CompletedTask;
     }
 }

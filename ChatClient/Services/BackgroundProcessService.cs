@@ -599,6 +599,7 @@ public sealed class BackgroundProcessService : IBackgroundProcessService
                 Request.Arguments,
                 LogPath,
                 StartedAt,
+                Process.Id,
                 IsRunning,
                 IsHealthy,
                 ExitCode,

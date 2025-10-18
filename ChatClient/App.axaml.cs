@@ -209,6 +209,7 @@ public partial class App : Application
 
         _ollamaProcessManager?.Dispose();
         _backgroundProcessService?.Dispose();
+        OllamaProcessRegistry.Clear();
     }
 
     private Task WatchForTimeoutAsync(Task initializationTask, SplashScreenViewModel splashViewModel, CancellationToken token, Action<string> postStatus)

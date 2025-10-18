@@ -173,7 +173,7 @@ public static class LlmClientFactory
         };
     }
 
-    private static LlmClientRegistration CreateOllamaClient(ProviderSettings settings)
+    internal static LlmClientRegistration CreateOllamaClient(ProviderSettings settings)
     {
         if (settings is null)
         {
