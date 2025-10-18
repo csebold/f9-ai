@@ -4,46 +4,97 @@
 
 ### ollama
 
-* We will support local installations and routing hubs like Ollama
+- [x] Support local installations and routing hubs like Ollama
+- [ ] If Ollama is not running then start it in the background while we're running
+- [ ] Support showing a terminal where local tools or servers are running
+
+#### Multiple models switching and downloading
+
+```python
+import requests
+from bs4 import BeautifulSoup
+
+# Step 1: Fetch library page
+url = "https://ollama.com/library"
+html = requests.get(url).text
+
+# Step 2: Parse model entries
+soup = BeautifulSoup(html, 'html.parser')
+model_cards = soup.find_all('a', class_='font-mono')
+
+# Step 3: Extract names
+all_models = [card.text.strip() for card in model_cards]
+
+# Step 4: Filter models known to work on Apple Silicon
+known_good = [
+    'llama3', 'llama3:70b', 'mistral', 'mixtral',
+    'codellama', 'codellama:34b-instruct',
+    'gemma', 'gemma:7b', 'phi', 'openchat', 'dolphin',
+    'tinyllama', 'orca-mini', 'llava'
+]
+
+compatible_models = [m for m in all_models if any(g in m for g in known_good)]
+
+# Output
+print("✅ Models likely to work well on Apple Silicon:")
+for m in compatible_models:
+    print(f"- {m}")
+```
+
+This is ChatGPT-5's suggestion as to how to guess what models work with Apple Silicon.
+
+- [x] Present refreshable provider-specific model lists in both global and project settings
+- [ ] Adapt this script to fetch https://ollama.com/library and get working models (natively if possible rather than using Python)
+- [ ] Have the model list indicate the ones you already have and the ones that you could download
+- [ ] Offer to download the model you want
+- [ ] Switching models should shut down the Ollama server and then start it back up again
+
+## LLM Model Support
+
+- [ ] For each provider, get their favicon image and cache it
+- [ ] For each startup of the application, check to see if it changed, and update the cached version if it did
+- [ ] In the display in the window for what version LLM you're running, use the favicon image with a tooltip indicating what provider it is, followed by the text of the model itself, instead of provider text and model text
 
 ## Project Support
 
 ### Instructions
 
-* We will send the instructions along with the first chat in a conversation
+- [ ] Send the instructions along with the first chat in a conversation
 
 ### Files
 
-* Projects have files and they will be sent along, or referred to, in the first chat in a conversation
-* Chats will be able to upload files that are specific to that chat
+- [ ] Projects have files and they will be sent along, or referred to, in the first chat in a conversation
+- [ ] Chats will be able to upload files that are specific to that chat
 
 ### Persistence of memory in a single chat
 
-* For APIs that do not have a built-in memory functionality, we will send some kind of memory of this chat with each message.
-* For APIs that do have some sort of memory functionality, we will take advantage of it.
+- [ ] For APIs that do not have a built-in memory functionality, send some kind of memory of this chat with each message.
+- [ ] For APIs that do have some sort of memory functionality, take advantage of it.
 
 ### Availability of other chat memories in a project
 
-* Part of initialization of a chat will be to let the LLM know about other chats we have had in some way.
+- [ ] Part of initialization of a chat will be to let the LLM know about other chats we have had in some way.
 
 ### Customization of how we summarize
 
-* Options for summarization using the current model or another, cheaper LLM model will be available.
+- [ ] Options for summarization using the current model or another, cheaper LLM model will be available.
 
 ## Markdown Support
 
-* We will format and display Markdown in responses.
-* We will optionally display source in responses.
-* We will optionally display sent messages as formatted Markdown.
+- [ ] Format and display Markdown in responses.
+- [ ] Optionally display source in responses.
+- [ ] Optionally display sent messages as formatted Markdown.
 
 ## Implementation Plan
 
-1. Gather Integration Details: review current model adapters and confirm connectivity requirements for local Ollama installs and routing hubs, including auth and transport nuances.
-2. Implement Ollama Adapter Updates: extend the model connector to target local and hub endpoints, expose configuration flags, and add smoke tests to validate prompt/response flow.
-3. Bootstrap Conversations: update chat initialization so the first message bundles project instructions and file summaries, and define payload contracts for downstream clients.
-4. Enhance File Handling: differentiate project-level files from chat uploads, ensure storage links are available during the first exchange, and document retention rules.
-5. Build Memory Persistence: design storage for per-chat transcripts, add serialization that replays memories when the API lacks native recall, and short-circuit when native memory exists.
-6. Surface Cross-Chat Context: create an index of related chats, implement selection heuristics, and inject summarized context during session startup when relevant.
-7. Add Summarization Controls: provide configuration for model tier selection, run summaries asynchronously with caching, and surface toggles via API and UI.
-8. Upgrade Markdown Rendering: wire a consistent renderer for responses and sent messages, add optional source view, and verify formatting in the display pipeline.
-9. Validate and Launch: expand automated coverage for initialization payloads, summarization choices, and Markdown output; refresh documentation, instrumentation, and support playbooks ahead of rollout.
+1. ✅ **Unify model discovery**: expose refreshable provider model lists in global settings and per-project overrides; normalize provider inference when models or endpoints imply Ollama.
+2. 🔄 **Automated Ollama model catalog**: replace the Python example with a native fetcher that distinguishes installed versus available models and drives download/install prompts.
+3. 🔄 **Ollama lifecycle management**: detect missing daemon, start/stop it when switching models, and optionally surface the backing terminal output.
+4. 🔄 **Provider branding**: cache provider favicons, refresh them on startup, and display icons plus tooltips alongside the active model name.
+5. 🔄 **Conversation bootstrap**: attach project instructions and relevant file metadata to the first message for new chats.
+6. 🔄 **File handling**: separate project files from chat uploads, expose them for the LLM on demand, and manage retention policies.
+7. 🔄 **Memory persistence**: persist short-term chat memories for providers without native support and integrate with native capabilities when they exist.
+8. 🔄 **Cross-chat context**: surface summaries of related chats during session initialization based on project history.
+9. 🔄 **Summarization controls**: allow choosing summary models/tiers, run summaries asynchronously, and add UI/API toggles.
+10. 🔄 **Markdown experience**: implement consistent Markdown rendering for responses and sent messages, including optional source view.
+11. 🔄 **Validation and rollout**: expand automated coverage, instrumentation, and documentation for the new capabilities.

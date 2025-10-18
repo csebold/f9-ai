@@ -1,4 +1,8 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using ChatClient.Models;
 using ChatClient.Services;
 using ChatClient.ViewModels;
@@ -18,7 +22,7 @@ public class ProjectEditorViewModelTests
             OpenAi = new ProviderSettings { ApiKey = "openai-default", Model = "gpt-4o-mini" }
         };
 
-        var viewModel = new ProjectEditorViewModel(project, defaults, isNewProject: true);
+        var viewModel = new ProjectEditorViewModel(project, defaults, isNewProject: true, new StubModelCatalogService());
         ProjectSettings? saved = null;
         viewModel.Saved += (_, result) => saved = result;
 
@@ -48,7 +52,7 @@ public class ProjectEditorViewModelTests
         var project = new ProjectSettings();
         var defaults = new AppSettings();
 
-        var viewModel = new ProjectEditorViewModel(project, defaults, isNewProject: true);
+        var viewModel = new ProjectEditorViewModel(project, defaults, isNewProject: true, new StubModelCatalogService());
 
         viewModel.Name = "   ";
         Assert.False(viewModel.SaveCommand.CanExecute(null));
@@ -72,9 +76,60 @@ public class ProjectEditorViewModelTests
             OpenRouter = new ProviderSettings { ApiKey = "router", Model = "openrouter/auto" }
         };
 
-        var viewModel = new ProjectEditorViewModel(project, defaults, isNewProject: false);
+        var viewModel = new ProjectEditorViewModel(project, defaults, isNewProject: false, new StubModelCatalogService());
 
         Assert.Equal(LlmProvider.OpenRouter, viewModel.SelectedProviderOption.Provider);
         Assert.Equal("Existing Project", viewModel.Name);
+    }
+
+    [Fact]
+    public void SaveCommand_PersistsSelectedProvider()
+    {
+        var project = new ProjectSettings();
+        var defaults = new AppSettings
+        {
+            Provider = LlmProvider.OpenAi
+        };
+
+        var viewModel = new ProjectEditorViewModel(project, defaults, isNewProject: true, new StubModelCatalogService());
+        viewModel.Name = "Ollama Project";
+        viewModel.SelectedProviderOption = viewModel.Providers.First(p => p.Provider == LlmProvider.Ollama);
+
+        ProjectSettings? saved = null;
+        viewModel.Saved += (_, result) => saved = result;
+
+        viewModel.SaveCommand.Execute(null);
+
+        Assert.NotNull(saved);
+        Assert.Equal(LlmProvider.Ollama, saved!.Provider);
+    }
+
+    [Fact]
+    public void ChangingProvider_ClearsModelOverride()
+    {
+        var project = new ProjectSettings
+        {
+            Model = "gpt-4o-mini"
+        };
+
+        var defaults = new AppSettings
+        {
+            Provider = LlmProvider.OpenAi
+        };
+
+        var viewModel = new ProjectEditorViewModel(project, defaults, isNewProject: false, new StubModelCatalogService());
+
+        Assert.Equal("gpt-4o-mini", viewModel.Model);
+        Assert.NotNull(viewModel.SelectedModelOption);
+
+        viewModel.SelectedProviderOption = viewModel.Providers.First(p => p.Provider == LlmProvider.Ollama);
+
+        Assert.Equal(string.Empty, viewModel.Model);
+        Assert.Null(viewModel.SelectedModelOption?.ModelId);
+    }
+    private sealed class StubModelCatalogService : IModelCatalogService
+    {
+        public Task<IReadOnlyList<string>> GetModelsAsync(LlmProvider provider, ProviderSettings providerSettings, CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
     }
 }

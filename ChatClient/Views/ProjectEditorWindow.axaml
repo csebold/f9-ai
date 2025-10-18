@@ -46,8 +46,25 @@
                Watermark="Optional - inherits default when blank"/>
 
       <TextBlock Text="Model Override"/>
-      <TextBox Text="{Binding Model}"
-               Watermark="Optional - inherits default when blank"/>
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <ComboBox Width="300"
+                  ItemsSource="{Binding ModelOptions}"
+                  SelectedItem="{Binding SelectedModelOption}">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:ProjectEditorViewModel+ModelOption">
+              <TextBlock Text="{Binding DisplayName}"/>
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <Button Content="Refresh"
+                Command="{Binding FetchModelsCommand}"/>
+      </StackPanel>
+      <ProgressBar IsIndeterminate="True"
+                   IsVisible="{Binding IsBusy}"
+                   Height="4"/>
+      <TextBlock Text="{Binding StatusMessage}"
+                 Foreground="Gray"
+                 TextWrapping="Wrap"/>
       <TextBlock Text="Endpoint Override"/>
       <TextBox Text="{Binding Endpoint}"
                Watermark="Optional - inherits default when blank"/>

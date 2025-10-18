@@ -35,7 +35,7 @@ public static class LlmClientFactory
             throw new ArgumentNullException(nameof(settings));
         }
 
-        var provider = project?.Provider ?? settings.Provider;
+        var provider = ResolveProvider(settings, project);
         var providerSettings = ResolveProviderSettings(settings, project, provider);
 
         return provider switch
@@ -224,6 +224,56 @@ public static class LlmClientFactory
         }
 
         return value.Trim();
+    }
+
+    private static LlmProvider ResolveProvider(AppSettings settings, ProjectSettings? project)
+    {
+        if (project?.Provider is { } explicitProvider)
+        {
+            return explicitProvider;
+        }
+
+        if (project is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(project.Endpoint))
+            {
+                if (InferProviderFromEndpoint(project.Endpoint) is { } inferredFromEndpoint)
+                {
+                    return inferredFromEndpoint;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(project.Model))
+            {
+                if (InferProviderFromModel(project.Model) is { } inferredFromModel)
+                {
+                    return inferredFromModel;
+                }
+            }
+        }
+
+        return settings.Provider;
+    }
+
+    private static LlmProvider? InferProviderFromEndpoint(string endpoint)
+    {
+        if (endpoint.Contains("11434", StringComparison.Ordinal))
+        {
+            return LlmProvider.Ollama;
+        }
+
+        return null;
+    }
+
+    private static LlmProvider? InferProviderFromModel(string model)
+    {
+        if (model.Contains(':', StringComparison.Ordinal) && !model.Contains('/', StringComparison.Ordinal))
+        {
+            // Models with colon notation and no slash are typically Ollama tags (e.g., "llama3:latest").
+            return LlmProvider.Ollama;
+        }
+
+        return null;
     }
 
     private static ProviderSettings ResolveProviderSettings(AppSettings settings, ProjectSettings? project, LlmProvider provider)

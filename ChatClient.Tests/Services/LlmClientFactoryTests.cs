@@ -68,6 +68,42 @@ public class LlmClientFactoryTests
         Assert.Equal("llama3", registration.ModelId);
     }
 
+    [Fact]
+    public void CreateForProject_InferOllamaProviderFromModelOverride()
+    {
+        var settings = CreateDefaultSettings();
+        settings.Provider = LlmProvider.OpenRouter;
+
+        var project = new ProjectSettings
+        {
+            Name = "Ollama Override",
+            Model = "llama3:latest"
+        };
+
+        var registration = LlmClientFactory.CreateForProject(settings, project);
+
+        Assert.Equal("Ollama", registration.ProviderDisplayName);
+        Assert.Equal("llama3:latest", registration.ModelId);
+    }
+
+    [Fact]
+    public void CreateForProject_DoesNotInferOllamaForOpenRouterModels()
+    {
+        var settings = CreateDefaultSettings();
+        settings.Provider = LlmProvider.OpenRouter;
+
+        var project = new ProjectSettings
+        {
+            Name = "OpenRouter Override",
+            Model = "openrouter/auto"
+        };
+
+        var registration = LlmClientFactory.CreateForProject(settings, project);
+
+        Assert.Equal("OpenRouter", registration.ProviderDisplayName);
+        Assert.Equal("openrouter/auto", registration.ModelId);
+    }
+
     private static AppSettings CreateDefaultSettings()
     {
         return new AppSettings

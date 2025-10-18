@@ -546,7 +546,7 @@ public partial class MainWindow : Window
 
         var dialog = new ProjectEditorWindow
         {
-            DataContext = new ProjectEditorViewModel(_activeProject, _settings, isNewProject: false)
+            DataContext = new ProjectEditorViewModel(_activeProject, _settings, isNewProject: false, _modelCatalogService)
         };
 
         var updated = await ShowProjectEditorAsync(dialog);
@@ -574,7 +574,7 @@ public partial class MainWindow : Window
         var newProject = new ProjectSettings();
         var dialog = new ProjectEditorWindow
         {
-            DataContext = new ProjectEditorViewModel(newProject, _settings, isNewProject: true)
+            DataContext = new ProjectEditorViewModel(newProject, _settings, isNewProject: true, _modelCatalogService)
         };
 
         var result = await ShowProjectEditorAsync(dialog);
@@ -1197,6 +1197,7 @@ public partial class MainWindow : Window
         target.Provider = source.Provider;
         target.ApiKey = source.ApiKey;
         target.Model = source.Model;
+        target.Endpoint = source.Endpoint;
         target.WorkspacePath = source.WorkspacePath;
         target.ThemeId = source.ThemeId;
         target.FontFamily = source.FontFamily;
