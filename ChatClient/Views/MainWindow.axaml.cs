@@ -779,7 +779,7 @@ public partial class MainWindow : Window
             if (selectionResult.ErrorMessage is not null && selectionResult.IsConnectionFailure)
             {
                 attemptedOllamaStartup = true;
-                await EnsureOllamaRunningAsync(registration, project, restart: false, CancellationToken.None);
+                await EnsureOllamaRunningAsync(registration, project, CancellationToken.None);
                 selectionResult = await EnsureOllamaModelSelectionAsync(registration, project, CancellationToken.None);
             }
 
@@ -852,10 +852,6 @@ public partial class MainWindow : Window
             var description = project?.Description ?? string.Empty;
             var hasCustomProject = project is not null;
 
-            var shouldRestartOllama = registration.Provider == LlmProvider.Ollama &&
-                                      _viewModel.CurrentProviderKind == LlmProvider.Ollama &&
-                                      !string.Equals(_viewModel.CurrentModel, registration.ModelId, StringComparison.Ordinal);
-
             _viewModel.ChangeProject(registration, projectName, instructions, description, hasCustomProject, isUpdate, emitStatusMessage);
             _viewModel.ApplyProviderBranding(providerBranding);
 
@@ -867,7 +863,7 @@ public partial class MainWindow : Window
 
             if (registration.Provider == LlmProvider.Ollama)
             {
-                await EnsureOllamaRunningAsync(registration, project, shouldRestartOllama, CancellationToken.None);
+                await EnsureOllamaRunningAsync(registration, project, CancellationToken.None);
             }
 
             RefreshProjectList();
@@ -1017,7 +1013,7 @@ public partial class MainWindow : Window
         });
     }
 
-    private async Task EnsureOllamaRunningAsync(LlmClientRegistration registration, ProjectSettings? project, bool restart, CancellationToken cancellationToken)
+    private async Task EnsureOllamaRunningAsync(LlmClientRegistration registration, ProjectSettings? project, CancellationToken cancellationToken)
     {
         var endpoint = ResolveOllamaEndpoint(registration, project);
 
@@ -1032,39 +1028,14 @@ public partial class MainWindow : Window
 
         try
         {
-            var stopped = false;
-            if (restart)
-            {
-                stopped = await _ollamaProcessManager.StopServerAsync(cancellationToken).ConfigureAwait(false);
-                if (stopped)
-                {
-                    try
-                    {
-                        await Task.Delay(TimeSpan.FromMilliseconds(300), cancellationToken).ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                }
-            }
-
             OllamaProcessEnsureResult ensureResult;
             try
             {
                 ensureResult = await _ollamaProcessManager.EnsureServerAsync(endpoint, cancellationToken).ConfigureAwait(false);
             }
-            catch (InvalidOperationException ex) when (restart && stopped && ex.Message.Contains("Failed to start process 'ollama'", StringComparison.OrdinalIgnoreCase))
+            catch (InvalidOperationException ex) when (ex.Message.Contains("Failed to start process 'ollama'", StringComparison.OrdinalIgnoreCase))
             {
-                try
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
                 ensureResult = await _ollamaProcessManager.EnsureServerAsync(endpoint, cancellationToken).ConfigureAwait(false);
             }
 
