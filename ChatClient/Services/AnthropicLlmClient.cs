@@ -33,16 +33,22 @@ internal sealed class AnthropicLlmClient : ILlmClient
             : new Uri(baseUri, "messages");
     }
 
-    public async Task<string> GetResponseAsync(string prompt, CancellationToken cancellationToken = default)
+    public async Task<string> GetResponseAsync(LlmRequest request, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(prompt))
+        if (request is null)
         {
-            throw new ArgumentException("Prompt cannot be empty.", nameof(prompt));
+            throw new ArgumentNullException(nameof(request));
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, _endpoint);
-        request.Headers.TryAddWithoutValidation("x-api-key", _apiKey);
-        request.Headers.TryAddWithoutValidation("anthropic-version", "2023-06-01");
+        var prompt = request.Prompt;
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            throw new ArgumentException("Prompt cannot be empty.", nameof(request));
+        }
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _endpoint);
+        httpRequest.Headers.TryAddWithoutValidation("x-api-key", _apiKey);
+        httpRequest.Headers.TryAddWithoutValidation("anthropic-version", "2023-06-01");
 
         var payload = new AnthropicRequest(
             _model,
@@ -53,11 +59,12 @@ internal sealed class AnthropicLlmClient : ILlmClient
                 {
                     new AnthropicContent("text", prompt)
                 })
-            });
+            },
+            request.IncludeInstructions ? request.Instructions : null);
 
-        request.Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json");
+        httpRequest.Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json");
 
-        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
@@ -82,13 +89,24 @@ internal sealed class AnthropicLlmClient : ILlmClient
         throw new InvalidOperationException("Anthropic response did not include any textual content.");
     }
 
-    private sealed record AnthropicRequest(string Model, int MaxTokens, IReadOnlyList<AnthropicMessage> Messages);
+    private sealed record AnthropicRequest(
+        [property: JsonPropertyName("model")] string Model,
+        [property: JsonPropertyName("max_tokens")] int MaxTokens,
+        [property: JsonPropertyName("messages")] IReadOnlyList<AnthropicMessage> Messages,
+        [property: JsonPropertyName("system")] string? SystemInstructions);
 
-    private sealed record AnthropicMessage(string Role, IReadOnlyList<AnthropicContent> Content);
+    private sealed record AnthropicMessage(
+        [property: JsonPropertyName("role")] string Role,
+        [property: JsonPropertyName("content")] IReadOnlyList<AnthropicContent> Content);
 
-    private sealed record AnthropicContent(string Type, string Text);
+    private sealed record AnthropicContent(
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("text")] string Text);
 
-    private sealed record AnthropicResponse(IReadOnlyList<AnthropicContentResponse> Content);
+    private sealed record AnthropicResponse([
+        property: JsonPropertyName("content")] IReadOnlyList<AnthropicContentResponse> Content);
 
-    private sealed record AnthropicContentResponse(string Type, string? Text);
+    private sealed record AnthropicContentResponse(
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("text")] string? Text);
 }

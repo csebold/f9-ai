@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using ChatClient.Models;
@@ -66,6 +67,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private CancellationTokenSource? _responseCancellation;
     private string? _lastPrompt;
+    private bool _instructionsSent;
 
     public MainWindowViewModel(
         LlmClientRegistration? registration = null,
@@ -239,7 +241,14 @@ public partial class MainWindowViewModel : ViewModelBase
             IsResponding = true;
             StatusMessage = $"Requesting response from {CurrentProvider} ({CurrentModel})...";
 
-            var response = await _llmClient.GetResponseAsync(prompt, cancellation.Token);
+            var includeInstructions = !_instructionsSent && !string.IsNullOrWhiteSpace(CurrentInstructions);
+            var request = new LlmRequest(prompt, CurrentInstructions, includeInstructions);
+            var response = await _llmClient.GetResponseAsync(request, cancellation.Token);
+
+            if (includeInstructions)
+            {
+                _instructionsSent = true;
+            }
 
             stopwatch.Stop();
 
@@ -329,6 +338,8 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             AddMessage("System", "Welcome to Foundry-9 AI.", MessageRole.System);
         }
+
+        _instructionsSent = Messages.Any(message => message is { IsUser: true } or { IsAssistant: true });
     }
 
     private void ApplyContext(LlmClientRegistration registration, string projectName, string instructions, string description, bool hasCustomProject, bool isUpdate, bool emitStatusMessage)

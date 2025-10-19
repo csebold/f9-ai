@@ -30,24 +30,35 @@ internal sealed class OpenAiLlmClient : ILlmClient
             : new Uri(baseUri, "chat/completions");
     }
 
-    public async Task<string> GetResponseAsync(string prompt, CancellationToken cancellationToken = default)
+    public async Task<string> GetResponseAsync(LlmRequest request, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(prompt))
+        if (request is null)
         {
-            throw new ArgumentException("Prompt cannot be empty.", nameof(prompt));
+            throw new ArgumentNullException(nameof(request));
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, _endpoint);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-
-        var payload = new ChatCompletionRequest(_model, new[]
+        var prompt = request.Prompt;
+        if (string.IsNullOrWhiteSpace(prompt))
         {
-            new ChatMessage("user", prompt)
-        }, _temperature);
+            throw new ArgumentException("Prompt cannot be empty.", nameof(request));
+        }
 
-        request.Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json");
+        var messages = new List<ChatMessage>();
+        if (request.IncludeInstructions && !string.IsNullOrWhiteSpace(request.Instructions))
+        {
+            messages.Add(new ChatMessage("system", request.Instructions!));
+        }
 
-        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        messages.Add(new ChatMessage("user", prompt));
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _endpoint);
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+
+        var payload = new ChatCompletionRequest(_model, messages, _temperature);
+
+        httpRequest.Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json");
+
+        using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)

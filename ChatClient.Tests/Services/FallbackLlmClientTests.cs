@@ -11,7 +11,7 @@ public class FallbackLlmClientTests
     {
         var client = new FallbackLlmClient("offline");
 
-        var response = await client.GetResponseAsync("ignored");
+        var response = await client.GetResponseAsync(new LlmRequest("ignored"));
 
         Assert.Equal("offline", response);
     }

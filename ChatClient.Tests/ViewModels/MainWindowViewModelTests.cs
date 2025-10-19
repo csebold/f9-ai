@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using ChatClient.Models;
 using ChatClient.Services;
 using ChatClient.ViewModels;
 using Xunit;
@@ -82,6 +84,33 @@ public class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task SendCommand_IncludesInstructionsOnFirstMessageOnly()
+    {
+        var client = new StubLlmClient("Response");
+        var viewModel = new MainWindowViewModel(CreateRegistration(client), projectInstructions: "  Follow the workflow. ");
+
+        viewModel.Prompt = "Question";
+        await viewModel.SendCommand.ExecuteAsync(null);
+
+        Assert.NotNull(client.LastRequest);
+        Assert.True(client.LastRequest!.IncludeInstructions);
+        Assert.Equal("Follow the workflow.", client.LastRequest.Instructions);
+
+        viewModel.Prompt = "Second";
+        await viewModel.SendCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, client.Requests.Count);
+        Assert.False(client.Requests[1].IncludeInstructions);
+
+        viewModel.ResetMessages(Array.Empty<Message>(), includeWelcomeWhenEmpty: true);
+        viewModel.Prompt = "Third";
+        await viewModel.SendCommand.ExecuteAsync(null);
+
+        Assert.Equal(3, client.Requests.Count);
+        Assert.True(client.Requests[^1].IncludeInstructions);
+    }
+
+    [Fact]
     public async Task SendCommand_IgnoresExecution_WhenPromptIsEmptyAfterTrim()
     {
         var viewModel = new MainWindowViewModel(CreateRegistration(new StubLlmClient("Hello")));
@@ -115,7 +144,7 @@ public class MainWindowViewModelTests
     public async Task SendCommand_DisablesWhileInFlight()
     {
         var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var viewModel = new MainWindowViewModel(CreateRegistration(new AsyncStubLlmClient(_ => tcs.Task)));
+        var viewModel = new MainWindowViewModel(CreateRegistration(new AsyncStubLlmClient((_, _) => tcs.Task)));
         viewModel.Prompt = "Hello";
 
         var executionTask = viewModel.SendCommand.ExecuteAsync(null);
@@ -139,7 +168,7 @@ public class MainWindowViewModelTests
     public async Task StopCommand_CancelsInFlightRequest()
     {
         var cancellationObserved = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var viewModel = new MainWindowViewModel(CreateRegistration(new AsyncStubLlmClient(ct =>
+        var viewModel = new MainWindowViewModel(CreateRegistration(new AsyncStubLlmClient((_, ct) =>
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             ct.Register(() =>
@@ -189,7 +218,7 @@ public class MainWindowViewModelTests
     public async Task RetryCommand_ReplaysPromptWithoutDuplicatingUserMessage()
     {
         var callCount = 0;
-        var viewModel = new MainWindowViewModel(CreateRegistration(new AsyncStubLlmClient(_ =>
+        var viewModel = new MainWindowViewModel(CreateRegistration(new AsyncStubLlmClient((_, _) =>
         {
             callCount++;
             if (callCount == 1)
@@ -378,12 +407,19 @@ public class MainWindowViewModelTests
             _exception = exception;
         }
 
-        public Task<string> GetResponseAsync(string prompt, CancellationToken cancellationToken = default)
+        public LlmRequest? LastRequest { get; private set; }
+
+        public List<LlmRequest> Requests { get; } = new();
+
+        public Task<string> GetResponseAsync(LlmRequest request, CancellationToken cancellationToken = default)
         {
             if (_exception is not null)
             {
                 throw _exception;
             }
+
+            LastRequest = request ?? throw new ArgumentNullException(nameof(request));
+            Requests.Add(request);
 
             return Task.FromResult(_response ?? string.Empty);
         }
@@ -391,16 +427,16 @@ public class MainWindowViewModelTests
 
     private sealed class AsyncStubLlmClient : ILlmClient
     {
-        private readonly Func<CancellationToken, Task<string>> _taskFactory;
+        private readonly Func<LlmRequest, CancellationToken, Task<string>> _taskFactory;
 
-        public AsyncStubLlmClient(Func<CancellationToken, Task<string>> taskFactory)
+        public AsyncStubLlmClient(Func<LlmRequest, CancellationToken, Task<string>> taskFactory)
         {
             _taskFactory = taskFactory;
         }
 
-        public Task<string> GetResponseAsync(string prompt, CancellationToken cancellationToken = default)
+        public Task<string> GetResponseAsync(LlmRequest request, CancellationToken cancellationToken = default)
         {
-            return _taskFactory(cancellationToken);
+            return _taskFactory(request, cancellationToken);
         }
     }
 }

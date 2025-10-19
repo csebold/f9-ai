@@ -27,7 +27,9 @@
 
 ### Instructions
 
-- [ ] Send the instructions along with the first chat in a conversation
+- [x] Send the instructions along with the first chat in a conversation
+  - LLM requests now treat project instructions as a system message on the first successful turn of each conversation (or retry until one succeeds).
+  - Switching chats or clearing history resets the flag so fresh sessions automatically resend the project guidance.
 
 ### Files
 

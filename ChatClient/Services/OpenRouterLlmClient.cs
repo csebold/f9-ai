@@ -34,34 +34,45 @@ internal sealed class OpenRouterLlmClient : ILlmClient
             : new Uri(baseUri, "chat/completions");
     }
 
-    public async Task<string> GetResponseAsync(string prompt, CancellationToken cancellationToken = default)
+    public async Task<string> GetResponseAsync(LlmRequest request, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(prompt))
+        if (request is null)
         {
-            throw new ArgumentException("Prompt cannot be empty.", nameof(prompt));
+            throw new ArgumentNullException(nameof(request));
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, _endpoint);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+        var prompt = request.Prompt;
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            throw new ArgumentException("Prompt cannot be empty.", nameof(request));
+        }
+
+        var messages = new List<ChatMessage>();
+        if (request.IncludeInstructions && !string.IsNullOrWhiteSpace(request.Instructions))
+        {
+            messages.Add(new ChatMessage("system", request.Instructions!));
+        }
+
+        messages.Add(new ChatMessage("user", prompt));
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _endpoint);
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
 
         if (_referer is not null)
         {
-            request.Headers.TryAddWithoutValidation("HTTP-Referer", _referer);
+            httpRequest.Headers.TryAddWithoutValidation("HTTP-Referer", _referer);
         }
 
         if (_appTitle is not null)
         {
-            request.Headers.TryAddWithoutValidation("X-Title", _appTitle);
+            httpRequest.Headers.TryAddWithoutValidation("X-Title", _appTitle);
         }
 
-        var payload = new ChatCompletionRequest(_model, new[]
-        {
-            new ChatMessage("user", prompt)
-        }, _temperature);
+        var payload = new ChatCompletionRequest(_model, messages, _temperature);
 
-        request.Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json");
+        httpRequest.Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json");
 
-        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)

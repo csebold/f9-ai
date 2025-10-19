@@ -13,6 +13,6 @@ internal sealed class FallbackLlmClient : ILlmClient
         _message = message;
     }
 
-    public Task<string> GetResponseAsync(string prompt, CancellationToken cancellationToken = default)
+    public Task<string> GetResponseAsync(LlmRequest request, CancellationToken cancellationToken = default)
         => Task.FromResult(_message);
 }
