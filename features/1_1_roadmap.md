@@ -19,9 +19,9 @@
 
 ## LLM Model Support
 
-- [ ] For each provider, get their favicon image and cache it
-- [ ] For each startup of the application, check to see if it changed, and update the cached version if it did
-- [ ] In the display in the window for what version LLM you're running, use the favicon image with a tooltip indicating what provider it is, followed by the text of the model itself, instead of provider text and model text
+- [x] For each provider, get their favicon image and cache it
+- [x] For each startup of the application, check to see if it changed, and update the cached version if it did
+- [x] In the display in the window for what version LLM you're running, use the favicon image with a tooltip indicating what provider it is, followed by the text of the model itself, instead of provider text and model text
 
 ## Project Support
 

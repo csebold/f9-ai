@@ -46,6 +46,15 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool _hasCustomProject;
 
     [ObservableProperty]
+    private string? _currentProviderIconPath;
+
+    [ObservableProperty]
+    private bool _hasProviderIcon;
+
+    [ObservableProperty]
+    private string _currentProviderTooltip = string.Empty;
+
+    [ObservableProperty]
     private string _statusMessage = "Ready.";
 
     [ObservableProperty]
@@ -108,8 +117,10 @@ public partial class MainWindowViewModel : ViewModelBase
         string description,
         bool hasCustomProject,
         bool isUpdate = true,
-        bool emitStatusMessage = true) =>
+        bool emitStatusMessage = true)
+    {
         ApplyContext(registration, projectName, instructions, description, hasCustomProject, isUpdate, emitStatusMessage);
+    }
 
     private LlmClientRegistration CreateFallbackRegistration(string message) =>
         new(new FallbackLlmClient(message), LlmProvider.OpenAi, "Unavailable", "N/A", message);
@@ -324,6 +335,9 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         _registration = registration ?? throw new ArgumentNullException(nameof(registration));
         _llmClient = registration.Client;
+        OnPropertyChanged(nameof(CurrentProvider));
+        OnPropertyChanged(nameof(CurrentProviderKind));
+        OnPropertyChanged(nameof(CurrentModel));
 
         CurrentProjectName = string.IsNullOrWhiteSpace(projectName)
             ? DefaultProjectName
@@ -333,6 +347,7 @@ public partial class MainWindowViewModel : ViewModelBase
         HasCustomProject = hasCustomProject;
 
         StatusMessage = $"Ready - {registration.ProviderDisplayName} ({registration.ModelId})";
+        CurrentProviderTooltip = registration.ProviderDisplayName;
 
         if (!emitStatusMessage)
         {
@@ -353,6 +368,26 @@ public partial class MainWindowViewModel : ViewModelBase
         }
 
         AddMessage("System", message, MessageRole.System);
+    }
+
+    partial void OnCurrentProviderIconPathChanged(string? value)
+    {
+        HasProviderIcon = !string.IsNullOrWhiteSpace(value);
+    }
+
+    public void ApplyProviderBranding(ProviderBranding? branding)
+    {
+        if (branding is null)
+        {
+            CurrentProviderIconPath = null;
+            CurrentProviderTooltip = CurrentProvider;
+            return;
+        }
+
+        CurrentProviderIconPath = branding.IconPath;
+        CurrentProviderTooltip = string.IsNullOrWhiteSpace(branding.DisplayName)
+            ? CurrentProvider
+            : branding.DisplayName;
     }
 
     private void AddMessage(string author, string content, MessageRole role)

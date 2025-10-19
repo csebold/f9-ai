@@ -30,6 +30,7 @@ public partial class MainWindow : Window
     private readonly ISessionPersistenceService _sessionPersistenceService;
     private readonly IBackgroundProcessService _backgroundProcessService;
     private readonly IOllamaProcessManager _ollamaProcessManager;
+    private readonly IProviderBrandingService _providerBrandingService;
     private readonly ObservableCollection<ProjectListItem> _projectItems = new();
     private readonly ObservableCollection<ChatSessionListItem> _sessionItems = new();
     private readonly Dictionary<string, ProjectSessionState> _sessionStates = new(StringComparer.Ordinal);
@@ -52,6 +53,7 @@ public partial class MainWindow : Window
     private bool _suppressMessageSync;
     private readonly bool _ownsBackgroundService;
     private readonly bool _ownsOllamaManager;
+    private readonly bool _ownsProviderBrandingService;
 
     public MainWindow()
         : this(
@@ -72,7 +74,8 @@ public partial class MainWindow : Window
         ProjectSettings? activeProject,
         SessionStoreSnapshot? sessionSnapshot,
         IBackgroundProcessService? backgroundProcessService = null,
-        IOllamaProcessManager? ollamaProcessManager = null)
+        IOllamaProcessManager? ollamaProcessManager = null,
+        IProviderBrandingService? providerBrandingService = null)
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _modelCatalogService = modelCatalogService ?? throw new ArgumentNullException(nameof(modelCatalogService));
@@ -82,8 +85,10 @@ public partial class MainWindow : Window
         _sessionSnapshot = sessionSnapshot ?? new SessionStoreSnapshot();
         _backgroundProcessService = backgroundProcessService ?? new BackgroundProcessService();
         _ollamaProcessManager = ollamaProcessManager ?? new OllamaProcessManager(_backgroundProcessService);
+        _providerBrandingService = providerBrandingService ?? new ProviderBrandingService();
         _ownsBackgroundService = backgroundProcessService is null;
         _ownsOllamaManager = ollamaProcessManager is null;
+        _ownsProviderBrandingService = providerBrandingService is null;
         _backgroundProcessService.ProcessChanged += OnBackgroundProcessChanged;
 
         InitializeComponent();
@@ -786,6 +791,20 @@ public partial class MainWindow : Window
             }
         }
 
+        ProviderBranding? providerBranding = null;
+        try
+        {
+            providerBranding = await _providerBrandingService.GetBrandingAsync(registration.Provider, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            providerBranding = null;
+        }
+
         await Dispatcher.UIThread.InvokeAsync(async () =>
         {
             if (_viewModel is null)
@@ -826,6 +845,7 @@ public partial class MainWindow : Window
                                       !string.Equals(_viewModel.CurrentModel, registration.ModelId, StringComparison.Ordinal);
 
             _viewModel.ChangeProject(registration, projectName, instructions, description, hasCustomProject, isUpdate, emitStatusMessage);
+            _viewModel.ApplyProviderBranding(providerBranding);
 
             if (ollamaError is not null)
             {
@@ -1688,6 +1708,11 @@ public partial class MainWindow : Window
         if (_ownsBackgroundService)
         {
             _backgroundProcessService.Dispose();
+        }
+
+        if (_ownsProviderBrandingService && _providerBrandingService is IDisposable brandingDisposable)
+        {
+            brandingDisposable.Dispose();
         }
 
         if (_viewModel is not null)

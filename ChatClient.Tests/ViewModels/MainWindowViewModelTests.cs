@@ -17,6 +17,7 @@ public class MainWindowViewModelTests
         var viewModel = new MainWindowViewModel(registration);
 
         Assert.Equal(2, viewModel.Messages.Count);
+        Assert.Equal("TestProvider", viewModel.CurrentProviderTooltip);
 
         var welcome = viewModel.Messages[0];
         Assert.Equal("System", welcome.Author);
@@ -238,7 +239,27 @@ public class MainWindowViewModelTests
         Assert.Equal("Project B", viewModel.CurrentProjectName);
         Assert.Equal("Project overview.", viewModel.CurrentDescription);
         Assert.True(viewModel.HasCustomProject);
+        Assert.Equal("ProviderB", viewModel.CurrentProviderTooltip);
         Assert.Equal("Ready - ProviderB (model-b)", viewModel.StatusMessage);
+    }
+
+    [Fact]
+    public void ApplyProviderBranding_UpdatesIconPathAndTooltip()
+    {
+        var viewModel = new MainWindowViewModel(CreateRegistration(new StubLlmClient("Hello"), "ProviderZ", "model-x"));
+        var branding = new ProviderBranding(LlmProvider.OpenAi, "ProviderZ Display", "/tmp/icon.png");
+
+        viewModel.ApplyProviderBranding(branding);
+
+        Assert.Equal("/tmp/icon.png", viewModel.CurrentProviderIconPath);
+        Assert.True(viewModel.HasProviderIcon);
+        Assert.Equal("ProviderZ Display", viewModel.CurrentProviderTooltip);
+
+        viewModel.ApplyProviderBranding(null);
+
+        Assert.Null(viewModel.CurrentProviderIconPath);
+        Assert.False(viewModel.HasProviderIcon);
+        Assert.Equal("ProviderZ", viewModel.CurrentProviderTooltip);
     }
 
     [Fact]

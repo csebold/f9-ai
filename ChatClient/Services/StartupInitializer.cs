@@ -9,11 +9,13 @@ public sealed class StartupInitializer : IStartupInitializer
 {
     private readonly ISettingsService _settingsService;
     private readonly IProjectWorkspaceService _workspaceService;
+    private readonly IProviderBrandingService _brandingService;
 
-    public StartupInitializer(ISettingsService settingsService, IProjectWorkspaceService workspaceService)
+    public StartupInitializer(ISettingsService settingsService, IProjectWorkspaceService workspaceService, IProviderBrandingService brandingService)
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _workspaceService = workspaceService ?? throw new ArgumentNullException(nameof(workspaceService));
+        _brandingService = brandingService ?? throw new ArgumentNullException(nameof(brandingService));
     }
 
     public async Task<StartupInitializationResult> InitializeAsync(
@@ -49,6 +51,22 @@ public sealed class StartupInitializer : IStartupInitializer
 
         var providerForStatus = activeProject?.Provider ?? settings.Provider;
         var providerDisplayName = providerForStatus.ToString();
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        reporter.Report("Refreshing provider branding...");
+        try
+        {
+            await _brandingService.RefreshAllAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            reporter.Report($"Failed to refresh provider branding: {ex.Message}");
+        }
 
         if (settingsUpdated)
         {

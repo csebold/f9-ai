@@ -30,7 +30,8 @@ public class StartupInitializerTests
             ["beta"] = false
         });
 
-        var initializer = new StartupInitializer(settingsService, workspaceService);
+        var brandingService = new RecordingBrandingService();
+        var initializer = new StartupInitializer(settingsService, workspaceService, brandingService);
 
         var progressMessages = new List<string>();
         var result = await initializer.InitializeAsync(
@@ -46,8 +47,10 @@ public class StartupInitializerTests
         Assert.Contains("Loading user settings...", progressMessages);
         Assert.Contains("Preparing workspace for 'Alpha'...", progressMessages);
         Assert.Contains("Selecting active project...", progressMessages);
+        Assert.Contains("Refreshing provider branding...", progressMessages);
         Assert.Contains("Saving updated settings...", progressMessages);
         Assert.Equal(new[] { settings.Projects[0], settings.Projects[1] }, workspaceService.EnsuredProjects);
+        Assert.Equal(1, brandingService.RefreshAllCallCount);
     }
 
     [Fact]
@@ -63,7 +66,8 @@ public class StartupInitializerTests
 
         var settingsService = new FakeSettingsService(settings);
         var workspaceService = new TrackingWorkspaceService(new Dictionary<string, bool>());
-        var initializer = new StartupInitializer(settingsService, workspaceService);
+        var brandingService = new RecordingBrandingService();
+        var initializer = new StartupInitializer(settingsService, workspaceService, brandingService);
 
         var result = await initializer.InitializeAsync(
             new Progress<string>(_ => { }),
@@ -73,6 +77,7 @@ public class StartupInitializerTests
         Assert.Equal(0, settingsService.SaveCallCount);
         Assert.Equal("OpenRouter", result.ProviderDisplayName);
         Assert.Same(project, result.ActiveProject);
+        Assert.Equal(1, brandingService.RefreshAllCallCount);
     }
 
     [Fact]
@@ -81,7 +86,8 @@ public class StartupInitializerTests
         var settings = new AppSettings();
         var settingsService = new FakeSettingsService(settings);
         var workspaceService = new TrackingWorkspaceService(new Dictionary<string, bool>());
-        var initializer = new StartupInitializer(settingsService, workspaceService);
+        var brandingService = new RecordingBrandingService();
+        var initializer = new StartupInitializer(settingsService, workspaceService, brandingService);
 
         using var cts = new CancellationTokenSource();
         cts.Cancel();
@@ -91,6 +97,7 @@ public class StartupInitializerTests
 
         Assert.Empty(workspaceService.EnsuredProjects);
         Assert.Equal(0, settingsService.SaveCallCount);
+        Assert.Equal(0, brandingService.RefreshAllCallCount);
     }
 
     [Fact]
@@ -112,12 +119,14 @@ public class StartupInitializerTests
 
         var settingsService = new FakeSettingsService(settings);
         var workspaceService = new TrackingWorkspaceService(new Dictionary<string, bool>());
-        var initializer = new StartupInitializer(settingsService, workspaceService);
+        var brandingService = new RecordingBrandingService();
+        var initializer = new StartupInitializer(settingsService, workspaceService, brandingService);
 
         var result = await initializer.InitializeAsync(new Progress<string>(_ => { }), CancellationToken.None);
 
         Assert.Equal("Anthropic", result.ProviderDisplayName);
         Assert.Same(project, result.ActiveProject);
+        Assert.Equal(1, brandingService.RefreshAllCallCount);
     }
 
     private sealed class FakeSettingsService : ISettingsService
@@ -166,5 +175,23 @@ public class StartupInitializerTests
                    _changes.TryGetValue(project.Id, out var updated) &&
                    updated;
         }
+    }
+
+    private sealed class RecordingBrandingService : IProviderBrandingService
+    {
+        public int RefreshAllCallCount { get; private set; }
+
+        public Task<ProviderBranding> GetBrandingAsync(LlmProvider provider, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ProviderBranding(provider, provider.ToString(), null));
+
+        public Task<IReadOnlyDictionary<LlmProvider, ProviderBranding>> RefreshAllAsync(CancellationToken cancellationToken = default)
+        {
+            RefreshAllCallCount++;
+            IReadOnlyDictionary<LlmProvider, ProviderBranding> snapshot = new Dictionary<LlmProvider, ProviderBranding>();
+            return Task.FromResult(snapshot);
+        }
+
+        public Task<ProviderBranding> RefreshAsync(LlmProvider provider, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ProviderBranding(provider, provider.ToString(), null));
     }
 }

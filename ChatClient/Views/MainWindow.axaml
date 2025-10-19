@@ -75,6 +75,7 @@
       <conv:MessageRoleToFontStyleConverter x:Key="MessageRoleToFontStyleConverter" />
       <conv:MessageRoleToTextAlignmentConverter x:Key="MessageRoleToTextAlignmentConverter" />
       <conv:StringNotEmptyToBoolConverter x:Key="StringNotEmptyToBoolConverter" />
+      <conv:FilePathToBitmapConverter x:Key="FilePathToBitmapConverter" />
       <conv:BooleanNegationConverter x:Key="BooleanNegationConverter" />
       <conv:MessageTimestampDisplayConverter x:Key="MessageTimestampDisplayConverter" />
       <conv:MessageTimestampTooltipConverter x:Key="MessageTimestampTooltipConverter" />
@@ -183,12 +184,23 @@
                      FontWeight="SemiBold"
                      Foreground="{DynamicResource AuthorForegroundBrush}"
                      Text="{Binding CurrentProjectName}" />
-          <TextBlock FontSize="12"
-                     Foreground="{DynamicResource AuthorForegroundBrush}"
-                     Text="{Binding CurrentProvider}" />
-          <TextBlock FontSize="12"
-                     Foreground="{DynamicResource AuthorForegroundBrush}"
-                     Text="{Binding CurrentModel}" />
+          <StackPanel Orientation="Horizontal"
+                      Spacing="6"
+                      VerticalAlignment="Center">
+            <Image Width="16"
+                   Height="16"
+                   Source="{Binding CurrentProviderIconPath, Converter={StaticResource FilePathToBitmapConverter}}"
+                   ToolTip.Tip="{Binding CurrentProviderTooltip}"
+                   Stretch="Uniform"
+                   IsVisible="{Binding HasProviderIcon}" />
+            <TextBlock FontSize="12"
+                       Foreground="{DynamicResource AuthorForegroundBrush}"
+                       Text="{Binding CurrentProvider}"
+                       IsVisible="{Binding HasProviderIcon, Converter={StaticResource BooleanNegationConverter}}" />
+            <TextBlock FontSize="12"
+                       Foreground="{DynamicResource AuthorForegroundBrush}"
+                       Text="{Binding CurrentModel}" />
+          </StackPanel>
           <TextBlock FontSize="12"
                      Foreground="{DynamicResource AuthorForegroundBrush}"
                      TextWrapping="Wrap"

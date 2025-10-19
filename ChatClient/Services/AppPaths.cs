@@ -71,6 +71,31 @@ public static class AppPaths
         return Path.Combine(baseDirectory, "ollama-processes.json");
     }
 
+    public static string GetProviderBrandingDirectory()
+    {
+        var baseDirectory = GetBaseDirectory();
+        var brandingDirectory = Path.Combine(baseDirectory, "Branding");
+        Directory.CreateDirectory(brandingDirectory);
+        return brandingDirectory;
+    }
+
+    public static string GetProviderFaviconPath(LlmProvider provider, string extension = ".ico")
+    {
+        if (string.IsNullOrWhiteSpace(extension))
+        {
+            extension = ".ico";
+        }
+
+        if (!extension.StartsWith('.'))
+        {
+            extension = "." + extension;
+        }
+
+        var sanitizedExtension = extension.ToLowerInvariant();
+        var fileName = $"{provider.ToString().ToLowerInvariant()}{sanitizedExtension}";
+        return Path.Combine(GetProviderBrandingDirectory(), fileName);
+    }
+
     internal static IDisposable OverrideBaseDirectoryForTesting(string directory)
     {
         if (string.IsNullOrWhiteSpace(directory))
