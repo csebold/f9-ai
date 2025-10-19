@@ -90,6 +90,7 @@ public partial class MainWindow : Window
         _ownsOllamaManager = ollamaProcessManager is null;
         _ownsProviderBrandingService = providerBrandingService is null;
         _backgroundProcessService.ProcessChanged += OnBackgroundProcessChanged;
+        ApplyOllamaRuntimeDefaults();
 
         InitializeComponent();
 
@@ -122,6 +123,16 @@ public partial class MainWindow : Window
         BuildSessionStates();
         RefreshProjectList();
         await ApplyProjectAsync(_activeProject, persist: false, isUpdate: false, emitStatusMessageOverride: false);
+    }
+
+    private void ApplyOllamaRuntimeDefaults()
+    {
+        if (_settings.OllamaRuntime is null)
+        {
+            _settings.OllamaRuntime = new OllamaRuntimeSettings();
+        }
+
+        _ollamaProcessManager.UpdateEnvironmentDefaults(_settings.OllamaRuntime);
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
@@ -551,6 +562,7 @@ public partial class MainWindow : Window
         }
 
         _settings = result;
+        ApplyOllamaRuntimeDefaults();
         var newProvider = _settings.Provider;
         var newOllamaModel = (_settings.Ollama.Model ?? string.Empty).Trim();
         var newOllamaEndpoint = NormalizeEndpoint(_settings.Ollama.Endpoint);

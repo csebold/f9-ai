@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using ChatClient.Models;
 namespace ChatClient.Services;
 
 public sealed class OllamaProcessManager : IOllamaProcessManager, IDisposable
@@ -16,6 +18,7 @@ public sealed class OllamaProcessManager : IOllamaProcessManager, IDisposable
     private readonly HttpClient _httpClient;
     private bool _disposed;
     private readonly HashSet<int> _trackedProcessIds = new();
+    private OllamaRuntimeSettings _runtimeDefaults = new();
 
     public OllamaProcessManager(IBackgroundProcessService backgroundProcessService, HttpClient? httpClient = null)
     {
@@ -63,6 +66,20 @@ public sealed class OllamaProcessManager : IOllamaProcessManager, IDisposable
         return new OllamaProcessEnsureResult(false, snapshot);
     }
 
+    public void UpdateEnvironmentDefaults(OllamaRuntimeSettings settings)
+    {
+        var copy = settings is null
+            ? new OllamaRuntimeSettings()
+            : new OllamaRuntimeSettings
+            {
+                MaxLoadedModels = settings.MaxLoadedModels,
+                NumParallelRequests = settings.NumParallelRequests,
+                MaxQueue = settings.MaxQueue
+            };
+
+        Interlocked.Exchange(ref _runtimeDefaults, copy);
+    }
+
     private BackgroundProcessRequest CreateRequest(Uri endpoint)
     {
         var port = endpoint.Port;
@@ -72,7 +89,7 @@ public sealed class OllamaProcessManager : IOllamaProcessManager, IDisposable
             : host;
         var hostConfiguration = $"{hostPart}:{port}";
 
-        return new BackgroundProcessRequest
+        var request = new BackgroundProcessRequest
         {
             Id = "ollama-daemon",
             DisplayName = "Ollama Server",
@@ -89,6 +106,9 @@ public sealed class OllamaProcessManager : IOllamaProcessManager, IDisposable
                 ["OLLAMA_HOST"] = hostConfiguration
             }
         };
+
+        ApplyRuntimeEnvironment(request.EnvironmentVariables);
+        return request;
     }
 
     private async Task<bool> IsOllamaRespondingAsync(Uri endpoint, CancellationToken cancellationToken)
@@ -205,6 +225,7 @@ public sealed class OllamaProcessManager : IOllamaProcessManager, IDisposable
                 ? $"[{endpoint.Host}]"
                 : endpoint.Host;
             startInfo.Environment["OLLAMA_HOST"] = $"{hostPart}:{endpoint.Port}";
+            ApplyRuntimeEnvironment((key, value) => startInfo.Environment[key] = value);
 
             using var process = Process.Start(startInfo);
             if (process is null)
@@ -327,6 +348,17 @@ public sealed class OllamaProcessManager : IOllamaProcessManager, IDisposable
                 StatusMessage: "Detected external Ollama server.",
                 ManagedByApplication: false);
         }
+    }
+
+    private void ApplyRuntimeEnvironment(IDictionary<string, string> environment) =>
+        ApplyRuntimeEnvironment((key, value) => environment[key] = value);
+
+    private void ApplyRuntimeEnvironment(Action<string, string> assign)
+    {
+        var runtime = Volatile.Read(ref _runtimeDefaults);
+        assign("OLLAMA_MAX_LOADED_MODELS", runtime.MaxLoadedModels.ToString(CultureInfo.InvariantCulture));
+        assign("OLLAMA_NUM_PARALLEL", runtime.NumParallelRequests.ToString(CultureInfo.InvariantCulture));
+        assign("OLLAMA_MAX_QUEUE", runtime.MaxQueue.ToString(CultureInfo.InvariantCulture));
     }
 
     public void Dispose()

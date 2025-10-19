@@ -15,6 +15,8 @@ public sealed class AppSettings
 
     public ProviderSettings Ollama { get; set; } = new();
 
+    public OllamaRuntimeSettings OllamaRuntime { get; set; } = new();
+
     public string? ActiveProjectId { get; set; }
 
     public List<ProjectSettings> Projects { get; set; } = new();
@@ -47,6 +49,15 @@ public sealed class ProviderSettings
     public string Model { get; set; } = string.Empty;
 
     public string Endpoint { get; set; } = string.Empty;
+}
+
+public sealed class OllamaRuntimeSettings
+{
+    public int MaxLoadedModels { get; set; } = 3;
+
+    public int NumParallelRequests { get; set; } = 1;
+
+    public int MaxQueue { get; set; } = 512;
 }
 
 public sealed class ChatInputSettings

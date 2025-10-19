@@ -88,10 +88,16 @@ public class SettingsViewModelTests
         var sessionService = new StubSessionPersistenceService();
         var viewModel = new SettingsViewModel(settingsService, modelCatalogService, settings, sessionService);
 
+        AppSettings? savedResult = null;
+        viewModel.Saved += (_, updated) => savedResult = updated;
+
         var ollamaOption = viewModel.Providers.First(p => p.Provider == LlmProvider.Ollama);
         viewModel.SelectedProviderOption = ollamaOption;
         viewModel.OllamaEndpoint = "http://localhost:12345/";
         viewModel.SelectedModelOption = CreateModelOption("llama3.1");
+        viewModel.OllamaMaxLoadedModels = 4;
+        viewModel.OllamaNumParallelRequests = 2;
+        viewModel.OllamaMaxQueue = 256;
 
         await viewModel.SaveCommand.ExecuteAsync(null);
 
@@ -99,6 +105,12 @@ public class SettingsViewModelTests
         Assert.Equal(LlmProvider.Ollama, settingsService.LastSaved.Provider);
         Assert.Equal("http://localhost:12345/", settingsService.LastSaved.Ollama.Endpoint);
         Assert.Equal("llama3.1", settingsService.LastSaved.Ollama.Model);
+        Assert.Equal(4, settingsService.LastSaved.OllamaRuntime.MaxLoadedModels);
+        Assert.Equal(2, settingsService.LastSaved.OllamaRuntime.NumParallelRequests);
+        Assert.Equal(256, settingsService.LastSaved.OllamaRuntime.MaxQueue);
+        Assert.Equal(4, savedResult?.OllamaRuntime.MaxLoadedModels);
+        Assert.Equal(2, savedResult?.OllamaRuntime.NumParallelRequests);
+        Assert.Equal(256, savedResult?.OllamaRuntime.MaxQueue);
     }
 
     [Fact]

@@ -53,6 +53,14 @@ public partial class SettingsViewModel : ObservableObject
         }
 
         OllamaEndpoint = _workingCopy.Ollama.Endpoint;
+        if (_workingCopy.OllamaRuntime is null)
+        {
+            _workingCopy.OllamaRuntime = new OllamaRuntimeSettings();
+        }
+
+        OllamaMaxLoadedModels = Math.Max(1, _workingCopy.OllamaRuntime.MaxLoadedModels);
+        OllamaNumParallelRequests = Math.Max(1, _workingCopy.OllamaRuntime.NumParallelRequests);
+        OllamaMaxQueue = Math.Max(1, _workingCopy.OllamaRuntime.MaxQueue);
         EnableSessionPersistence = _workingCopy.EnableSessionPersistence;
         MaxSessionsPerProject = Math.Max(1, _workingCopy.MaxSessionsPerProject);
         MaxMessagesPerSession = Math.Max(1, _workingCopy.MaxMessagesPerSession);
@@ -112,6 +120,15 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private string _ollamaEndpoint = string.Empty;
+
+    [ObservableProperty]
+    private double _ollamaMaxLoadedModels;
+
+    [ObservableProperty]
+    private double _ollamaNumParallelRequests;
+
+    [ObservableProperty]
+    private double _ollamaMaxQueue;
 
     [ObservableProperty]
     private bool _isBusy;
@@ -308,6 +325,10 @@ public partial class SettingsViewModel : ObservableObject
             _workingCopy.MaxSessionsPerProject = NormalizeLimit(MaxSessionsPerProject);
             _workingCopy.MaxMessagesPerSession = NormalizeLimit(MaxMessagesPerSession);
             _workingCopy.ChatInput.SendActivation = SelectedSendActivationOption.Activation;
+            var runtime = _workingCopy.OllamaRuntime ??= new OllamaRuntimeSettings();
+            runtime.MaxLoadedModels = NormalizeLimit(OllamaMaxLoadedModels);
+            runtime.NumParallelRequests = NormalizeLimit(OllamaNumParallelRequests);
+            runtime.MaxQueue = NormalizeLimit(OllamaMaxQueue);
 
             await _settingsService.SaveAsync(_workingCopy, CancellationToken.None);
             StatusMessage = "Settings saved.";
@@ -496,6 +517,14 @@ public partial class SettingsViewModel : ObservableObject
                 Model = source.Ollama.Model,
                 Endpoint = source.Ollama.Endpoint
             },
+            OllamaRuntime = source.OllamaRuntime is null
+                ? new OllamaRuntimeSettings()
+                : new OllamaRuntimeSettings
+                {
+                    MaxLoadedModels = source.OllamaRuntime.MaxLoadedModels,
+                    NumParallelRequests = source.OllamaRuntime.NumParallelRequests,
+                    MaxQueue = source.OllamaRuntime.MaxQueue
+                },
             ActiveProjectId = source.ActiveProjectId,
             Projects = source.Projects.Select(CloneProject).ToList(),
             EnableSessionPersistence = source.EnableSessionPersistence,

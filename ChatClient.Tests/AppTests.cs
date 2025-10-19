@@ -122,6 +122,10 @@ public sealed class AppTests
             IsDisposed = true;
         }
 
+        public void UpdateEnvironmentDefaults(OllamaRuntimeSettings settings)
+        {
+        }
+
         public Task<OllamaProcessEnsureResult> EnsureServerAsync(string? endpoint, CancellationToken cancellationToken) =>
             Task.FromResult(new OllamaProcessEnsureResult(false, null));
 
