@@ -9,20 +9,17 @@ using ChatClient.Models;
 
 namespace ChatClient.Services;
 
-public sealed class ProjectFileService : IProjectFileService
+public sealed class ChatFileService : IChatFileService
 {
-    public IReadOnlyList<ProjectFile> GetFiles(ProjectSettings project)
+    public IReadOnlyList<ProjectFile> GetFiles(ProjectSettings project, string sessionId)
     {
-        if (project is null)
-        {
-            throw new ArgumentNullException(nameof(project));
-        }
+        ValidateInputs(project, sessionId);
 
-        var directory = ProjectWorkspace.GetProjectFilesDirectory(project);
+        var directory = ProjectWorkspace.GetChatFilesDirectory(project, sessionId);
 
         try
         {
-            var files = Directory.EnumerateFiles(directory)
+            return Directory.EnumerateFiles(directory)
                 .Select(path =>
                 {
                     try
@@ -45,8 +42,6 @@ public sealed class ProjectFileService : IProjectFileService
                 .Select(file => file!)
                 .OrderBy(file => file.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
-
-            return files;
         }
         catch (IOException)
         {
@@ -58,12 +53,9 @@ public sealed class ProjectFileService : IProjectFileService
         }
     }
 
-    public async Task<ProjectFile> AddFileAsync(ProjectSettings project, string sourceFilePath, CancellationToken cancellationToken = default)
+    public async Task<ProjectFile> AddFileAsync(ProjectSettings project, string sessionId, string sourceFilePath, CancellationToken cancellationToken = default)
     {
-        if (project is null)
-        {
-            throw new ArgumentNullException(nameof(project));
-        }
+        ValidateInputs(project, sessionId);
 
         if (string.IsNullOrWhiteSpace(sourceFilePath))
         {
@@ -75,7 +67,7 @@ public sealed class ProjectFileService : IProjectFileService
             throw new FileNotFoundException("File to upload was not found.", sourceFilePath);
         }
 
-        var directory = ProjectWorkspace.GetProjectFilesDirectory(project);
+        var directory = ProjectWorkspace.GetChatFilesDirectory(project, sessionId);
         var fileName = Path.GetFileName(sourceFilePath);
         var targetFileName = EnsureUniqueFileName(directory, fileName);
         var targetPath = Path.Combine(directory, targetFileName);
@@ -92,19 +84,16 @@ public sealed class ProjectFileService : IProjectFileService
         return new ProjectFile(info.Name, info.FullName, info.Length, info.LastWriteTimeUtc);
     }
 
-    public Task DeleteFileAsync(ProjectSettings project, string fileName, CancellationToken cancellationToken = default)
+    public Task DeleteFileAsync(ProjectSettings project, string sessionId, string fileName, CancellationToken cancellationToken = default)
     {
-        if (project is null)
-        {
-            throw new ArgumentNullException(nameof(project));
-        }
+        ValidateInputs(project, sessionId);
 
         if (string.IsNullOrWhiteSpace(fileName))
         {
             throw new ArgumentException("File name must be provided.", nameof(fileName));
         }
 
-        var directory = ProjectWorkspace.GetProjectFilesDirectory(project);
+        var directory = ProjectWorkspace.GetChatFilesDirectory(project, sessionId);
         var targetPath = Path.Combine(directory, fileName);
 
         if (File.Exists(targetPath))
@@ -113,6 +102,19 @@ public sealed class ProjectFileService : IProjectFileService
         }
 
         return Task.CompletedTask;
+    }
+
+    private static void ValidateInputs(ProjectSettings project, string sessionId)
+    {
+        if (project is null)
+        {
+            throw new ArgumentNullException(nameof(project));
+        }
+
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            throw new ArgumentException("Session id must be provided.", nameof(sessionId));
+        }
     }
 
     private static string EnsureUniqueFileName(string directory, string fileName)

@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text;
 using Avalonia.Threading;
 using ChatClient.Models;
 using ChatClient.Services;
@@ -26,6 +27,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public ObservableCollection<Message> Messages { get; } = new();
     public ObservableCollection<ProjectFileItemViewModel> ProjectFiles { get; } = new();
     public ObservableCollection<BackgroundProcessItemViewModel> BackgroundProcesses { get; } = new();
+    public ObservableCollection<ProjectFileItemViewModel> ChatFiles { get; } = new();
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SendCommand))]
     private string _prompt = string.Empty;
@@ -50,6 +52,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _hasProjectFiles;
+
+    [ObservableProperty]
+    private string _currentChatFilesSummary = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasChatFiles;
 
     [ObservableProperty]
     private bool _hasCustomProject;
@@ -112,6 +120,55 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    public async Task RegisterChatFileAttachmentAsync(
+        ProjectFile file,
+        string mimeType,
+        string? preview,
+        bool isPreviewTruncated,
+        bool isBinary)
+    {
+        if (file is null)
+        {
+            throw new ArgumentNullException(nameof(file));
+        }
+
+        var builder = new StringBuilder();
+        builder.AppendLine($"User uploaded chat file '{file.Name}' ({mimeType}, {FormatFileSize(file.Length)}).");
+
+        if (preview is not null)
+        {
+            builder.AppendLine(isPreviewTruncated ? "Preview (truncated):" : "Contents:");
+            builder.AppendLine("```");
+            builder.AppendLine(preview);
+            builder.AppendLine("```");
+
+            if (isPreviewTruncated)
+            {
+                builder.AppendLine("(Preview truncated; full file remains available to the assistant.)");
+            }
+        }
+        else if (isBinary)
+        {
+            builder.AppendLine("Binary file preview not inlined. Ask the assistant to process it with the stored attachment if needed.");
+        }
+
+        AddMessage("You", builder.ToString().TrimEnd(), MessageRole.User);
+
+        var metadata = new[]
+        {
+            $"Name: {file.Name}",
+            $"Type: {mimeType}",
+            $"Size: {file.Length} bytes"
+        };
+
+        await LogChatAsync(
+            "ATTACHMENT",
+            $"Chat file '{file.Name}' uploaded",
+            metadata,
+            preview,
+            isBinary).ConfigureAwait(false);
+    }
+
     public IAsyncRelayCommand SendCommand { get; }
 
     public IRelayCommand StopCommand { get; }
@@ -154,6 +211,32 @@ public partial class MainWindowViewModel : ViewModelBase
 
         HasProjectFiles = ProjectFiles.Count > 0;
         CurrentProjectFilesSummary = HasProjectFiles
+            ? summary?.Trim() ?? string.Empty
+            : string.Empty;
+
+        if (!Messages.Any(message => message is { IsUser: true } or { IsAssistant: true }))
+        {
+            _systemContextSent = false;
+        }
+    }
+
+    public void ReplaceChatFiles(IEnumerable<ProjectFile> files, string summary)
+    {
+        ChatFiles.Clear();
+
+        if (files is not null)
+        {
+            foreach (var file in files)
+            {
+                if (file is not null)
+                {
+                    ChatFiles.Add(new ProjectFileItemViewModel(file));
+                }
+            }
+        }
+
+        HasChatFiles = ChatFiles.Count > 0;
+        CurrentChatFilesSummary = HasChatFiles
             ? summary?.Trim() ?? string.Empty
             : string.Empty;
 
@@ -298,26 +381,30 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private string BuildSystemContext()
     {
-        var hasInstructions = !string.IsNullOrWhiteSpace(CurrentInstructions);
-        var hasFileSummary = !string.IsNullOrWhiteSpace(CurrentProjectFilesSummary);
+        var segments = new List<string>(capacity: 3);
 
-        if (!hasInstructions && !hasFileSummary)
+        if (!string.IsNullOrWhiteSpace(CurrentInstructions))
+        {
+            segments.Add(CurrentInstructions.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(CurrentProjectFilesSummary))
+        {
+            segments.Add(CurrentProjectFilesSummary.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(CurrentChatFilesSummary))
+        {
+            segments.Add(CurrentChatFilesSummary.Trim());
+        }
+
+        if (segments.Count == 0)
         {
             return string.Empty;
         }
 
-        if (hasInstructions && !hasFileSummary)
-        {
-            return CurrentInstructions.Trim();
-        }
-
-        if (!hasInstructions && hasFileSummary)
-        {
-            return CurrentProjectFilesSummary.Trim();
-        }
-
         var separator = $"{Environment.NewLine}{Environment.NewLine}";
-        return $"{CurrentInstructions.Trim()}{separator}{CurrentProjectFilesSummary.Trim()}";
+        return string.Join(separator, segments);
     }
 
     private async Task SendCoreAsync(string prompt, bool appendUserMessage)
@@ -477,6 +564,9 @@ public partial class MainWindowViewModel : ViewModelBase
         CurrentInstructions = instructions?.Trim() ?? string.Empty;
         CurrentDescription = description?.Trim() ?? string.Empty;
         CurrentProjectFilesSummary = projectFilesSummary?.Trim() ?? string.Empty;
+        CurrentChatFilesSummary = string.Empty;
+        HasChatFiles = false;
+        ChatFiles.Clear();
         HasCustomProject = hasCustomProject;
 
         StatusMessage = $"Ready - {registration.ProviderDisplayName} ({registration.ModelId})";
@@ -565,5 +655,29 @@ public partial class MainWindowViewModel : ViewModelBase
     private void AddMessage(string author, string content, MessageRole role)
     {
         Messages.Add(new Message(author, content, DateTimeOffset.Now, role));
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        const long OneKB = 1024;
+        const long OneMB = OneKB * 1024;
+        const long OneGB = OneMB * 1024;
+
+        if (bytes >= OneGB)
+        {
+            return $"{bytes / (double)OneGB:F1} GB";
+        }
+
+        if (bytes >= OneMB)
+        {
+            return $"{bytes / (double)OneMB:F1} MB";
+        }
+
+        if (bytes >= OneKB)
+        {
+            return $"{bytes / (double)OneKB:F1} KB";
+        }
+
+        return $"{bytes} B";
     }
 }

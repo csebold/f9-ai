@@ -7,6 +7,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.IO;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -27,6 +28,48 @@ public partial class MainWindow : Window
     private const string DefaultProjectName = "Default Project";
     private const string DefaultProjectKey = "default";
     private const double AutoScrollThreshold = 32;
+    private const int MaxChatFileInlineBytes = 128 * 1024;
+
+    private static readonly IReadOnlyDictionary<string, string> KnownMimeTypes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        [".txt"] = "text/plain",
+        [".md"] = "text/markdown",
+        [".markdown"] = "text/markdown",
+        [".json"] = "application/json",
+        [".jsonl"] = "application/json",
+        [".yaml"] = "application/yaml",
+        [".yml"] = "application/yaml",
+        [".xml"] = "application/xml",
+        [".csv"] = "text/csv",
+        [".tsv"] = "text/tab-separated-values",
+        [".log"] = "text/plain",
+        [".html"] = "text/html",
+        [".htm"] = "text/html",
+        [".css"] = "text/css",
+        [".js"] = "application/javascript",
+        [".ts"] = "text/plain",
+        [".py"] = "text/x-python",
+        [".cs"] = "text/plain",
+        [".java"] = "text/plain",
+        [".go"] = "text/plain",
+        [".rb"] = "text/plain",
+        [".rs"] = "text/plain",
+        [".c"] = "text/plain",
+        [".cpp"] = "text/plain",
+        [".h"] = "text/plain",
+        [".hpp"] = "text/plain",
+        [".swift"] = "text/plain",
+        [".kt"] = "text/plain",
+        [".sql"] = "text/plain",
+        [".svg"] = "image/svg+xml",
+        [".png"] = "image/png",
+        [".jpg"] = "image/jpeg",
+        [".jpeg"] = "image/jpeg",
+        [".gif"] = "image/gif",
+        [".bmp"] = "image/bmp",
+        [".webp"] = "image/webp",
+        [".pdf"] = "application/pdf"
+    };
 
     private readonly ISettingsService _settingsService;
     private readonly IModelCatalogService _modelCatalogService;
@@ -35,6 +78,7 @@ public partial class MainWindow : Window
     private readonly IOllamaProcessManager _ollamaProcessManager;
     private readonly IProviderBrandingService _providerBrandingService;
     private readonly IProjectFileService _projectFileService;
+    private readonly IChatFileService _chatFileService;
     private readonly ChatLogService _chatLogService = new();
     private readonly ObservableCollection<ProjectListItem> _projectItems = new();
     private readonly ObservableCollection<ChatSessionListItem> _sessionItems = new();
@@ -69,7 +113,8 @@ public partial class MainWindow : Window
             new AppSettings(),
             activeProject: null,
             sessionSnapshot: new SessionStoreSnapshot(),
-            projectFileService: new ProjectFileService())
+            projectFileService: new ProjectFileService(),
+            chatFileService: new ChatFileService())
     {
     }
 
@@ -83,7 +128,8 @@ public partial class MainWindow : Window
         IBackgroundProcessService? backgroundProcessService = null,
         IOllamaProcessManager? ollamaProcessManager = null,
         IProviderBrandingService? providerBrandingService = null,
-        IProjectFileService? projectFileService = null)
+        IProjectFileService? projectFileService = null,
+        IChatFileService? chatFileService = null)
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _modelCatalogService = modelCatalogService ?? throw new ArgumentNullException(nameof(modelCatalogService));
@@ -95,6 +141,7 @@ public partial class MainWindow : Window
         _ollamaProcessManager = ollamaProcessManager ?? new OllamaProcessManager(_backgroundProcessService);
         _providerBrandingService = providerBrandingService ?? new ProviderBrandingService();
         _projectFileService = projectFileService ?? new ProjectFileService();
+        _chatFileService = chatFileService ?? new ChatFileService();
         _ownsBackgroundService = backgroundProcessService is null;
         _ownsOllamaManager = ollamaProcessManager is null;
         _ownsProviderBrandingService = providerBrandingService is null;
@@ -895,6 +942,7 @@ public partial class MainWindow : Window
 
             _viewModel.ReplaceProjectFiles(projectFiles, projectFilesSummary);
             _viewModel.ChangeProject(registration, projectName, instructions, description, hasCustomProject, projectFilesSummary, isUpdate, emitStatusMessage);
+            RefreshChatFiles(_activeProject, _activeSession);
             _viewModel.ApplyProviderBranding(providerBranding);
 
             if (ollamaError is not null)
@@ -975,7 +1023,7 @@ public partial class MainWindow : Window
         {
             try
             {
-                await AddProjectFileAsync(project, file).ConfigureAwait(false);
+                await AddProjectFileAsync(project, file);
                 addedCount++;
             }
             catch (Exception ex)
@@ -1023,6 +1071,96 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void AddChatFileButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        if (_activeProject is null || _activeSession is null)
+        {
+            return;
+        }
+
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storageProvider)
+        {
+            return;
+        }
+
+        var options = new FilePickerOpenOptions
+        {
+            Title = "Add chat files",
+            AllowMultiple = true
+        };
+
+        var files = await storageProvider.OpenFilePickerAsync(options);
+        if (files is null || files.Count == 0)
+        {
+            return;
+        }
+
+        var uploadedFiles = new List<ProjectFile>();
+        var addedCount = 0;
+
+        foreach (var file in files)
+        {
+            try
+            {
+                var uploaded = await AddChatFileAsync(_activeProject, _activeSession, file);
+                uploadedFiles.Add(uploaded);
+                addedCount++;
+            }
+            catch (Exception ex)
+            {
+                await PostSystemNoticeAsync($"Failed to add chat file '{file.Name}': {ex.Message}", isError: true);
+            }
+        }
+
+        RefreshChatFiles(_activeProject, _activeSession);
+
+        if (addedCount > 0)
+        {
+            _viewModel.StatusMessage = addedCount == 1
+                ? "Added 1 chat file to the conversation."
+                : $"Added {addedCount} chat files to the conversation.";
+        }
+
+        if (uploadedFiles.Count > 0)
+        {
+            await RegisterChatFileUploadsAsync(uploadedFiles);
+        }
+    }
+
+    private async void DeleteChatFileButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        if (_activeProject is null || _activeSession is null)
+        {
+            return;
+        }
+
+        if (sender is not Button button || button.Tag is not ProjectFileItemViewModel item)
+        {
+            return;
+        }
+
+        try
+        {
+            await _chatFileService.DeleteFileAsync(_activeProject, _activeSession.Id, item.Name, CancellationToken.None);
+            RefreshChatFiles(_activeProject, _activeSession);
+            _viewModel.StatusMessage = $"Removed chat file '{item.Name}'.";
+        }
+        catch (Exception ex)
+        {
+            await PostSystemNoticeAsync($"Failed to remove chat file '{item.Name}': {ex.Message}", isError: true);
+        }
+    }
+
     private async Task AddProjectFileAsync(ProjectSettings project, IStorageFile file)
     {
         if (project is null)
@@ -1035,31 +1173,74 @@ public partial class MainWindow : Window
             throw new ArgumentNullException(nameof(file));
         }
 
+        await AddStorageFileAsync(
+            file,
+            path => _projectFileService.AddFileAsync(project, path, CancellationToken.None));
+    }
+
+    private async Task<ProjectFile> AddChatFileAsync(ProjectSettings project, ChatSessionState session, IStorageFile file)
+    {
+        if (project is null)
+        {
+            throw new ArgumentNullException(nameof(project));
+        }
+
+        if (session is null)
+        {
+            throw new ArgumentNullException(nameof(session));
+        }
+
+        return await AddStorageFileAsync(
+            file,
+            path => _chatFileService.AddFileAsync(project, session.Id, path, CancellationToken.None));
+    }
+
+    private static async Task<ProjectFile> AddStorageFileAsync(IStorageFile file, Func<string, Task<ProjectFile>> addOperation)
+    {
+        if (file is null)
+        {
+            throw new ArgumentNullException(nameof(file));
+        }
+
+        if (addOperation is null)
+        {
+            throw new ArgumentNullException(nameof(addOperation));
+        }
+
         var localPath = file.TryGetLocalPath();
         if (!string.IsNullOrWhiteSpace(localPath) && File.Exists(localPath))
         {
-            await _projectFileService.AddFileAsync(project, localPath, CancellationToken.None).ConfigureAwait(false);
-            return;
+            return await addOperation(localPath);
         }
 
-        var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "f9-upload-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        var sanitizedName = SanitizeFileName(file.Name);
+        if (string.IsNullOrWhiteSpace(sanitizedName))
+        {
+            sanitizedName = "uploaded-file";
+        }
+
+        var tempPath = Path.Combine(tempDirectory, sanitizedName);
+
         await using var sourceStream = await file.OpenReadAsync();
         await using (var tempStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
         {
-            await sourceStream.CopyToAsync(tempStream);
+            await sourceStream.CopyToAsync(tempStream).ConfigureAwait(false);
         }
 
         try
         {
-            await _projectFileService.AddFileAsync(project, tempPath, CancellationToken.None).ConfigureAwait(false);
+            return await addOperation(tempPath);
         }
         finally
         {
             try
             {
-                if (File.Exists(tempPath))
+                if (Directory.Exists(tempDirectory))
                 {
-                    File.Delete(tempPath);
+                    Directory.Delete(tempDirectory, recursive: true);
                 }
             }
             catch
@@ -1067,6 +1248,27 @@ public partial class MainWindow : Window
                 // best effort cleanup
             }
         }
+    }
+
+    private static string SanitizeFileName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return string.Empty;
+        }
+
+        var invalid = Path.GetInvalidFileNameChars();
+        var buffer = name.ToCharArray();
+
+        for (var i = 0; i < buffer.Length; i++)
+        {
+            if (invalid.Contains(buffer[i]))
+            {
+                buffer[i] = '_';
+            }
+        }
+
+        return new string(buffer).Trim();
     }
 
     private void RefreshProjectFiles(ProjectSettings? project)
@@ -1087,6 +1289,167 @@ public partial class MainWindow : Window
         var summary = ProjectFileSummaryBuilder.Build(filesDirectory);
 
         _viewModel.ReplaceProjectFiles(files, summary);
+    }
+
+    private void RefreshChatFiles(ProjectSettings? project, ChatSessionState? session)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        if (project is null || session is null)
+        {
+            _viewModel.ReplaceChatFiles(Array.Empty<ProjectFile>(), string.Empty);
+            return;
+        }
+
+        var filesDirectory = ProjectWorkspace.GetChatFilesDirectory(project, session.Id);
+        var files = _chatFileService.GetFiles(project, session.Id);
+        var summary = ProjectFileSummaryBuilder.Build(filesDirectory, scopeName: "Chat");
+
+        _viewModel.ReplaceChatFiles(files, summary);
+    }
+
+    private async Task RegisterChatFileUploadsAsync(IEnumerable<ProjectFile> files)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        foreach (var file in files)
+        {
+            var (mimeType, preview, isBinary, isTruncated) = await ReadChatFilePreviewAsync(file);
+            await _viewModel.RegisterChatFileAttachmentAsync(file, mimeType, preview, isTruncated, isBinary);
+        }
+    }
+
+    private static async Task<(string MimeType, string? Preview, bool IsBinary, bool IsTruncated)> ReadChatFilePreviewAsync(ProjectFile file)
+    {
+        var mimeType = GetMimeType(file.Name);
+        var (preview, truncated, detectedBinary) = await TryReadTextPreviewAsync(file.FullPath, file.Length);
+
+        if (detectedBinary)
+        {
+            return (mimeType, null, true, false);
+        }
+
+        if (preview is not null)
+        {
+            if (!IsTextMimeType(mimeType))
+            {
+                mimeType = "text/plain";
+            }
+
+            return (mimeType, preview, false, truncated);
+        }
+
+        return (mimeType, null, true, false);
+    }
+
+    private static string GetMimeType(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            return "application/octet-stream";
+        }
+
+        var extension = Path.GetExtension(fileName);
+        if (string.IsNullOrWhiteSpace(extension))
+        {
+            return "application/octet-stream";
+        }
+
+        if (KnownMimeTypes.TryGetValue(extension, out var mime))
+        {
+            return mime;
+        }
+
+        return "application/octet-stream";
+    }
+
+    private static bool IsTextMimeType(string? mimeType)
+    {
+        if (string.IsNullOrWhiteSpace(mimeType))
+        {
+            return false;
+        }
+
+        if (mimeType.StartsWith("text/", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return mimeType.Equals("application/json", StringComparison.OrdinalIgnoreCase)
+               || mimeType.Equals("application/xml", StringComparison.OrdinalIgnoreCase)
+               || mimeType.Equals("application/yaml", StringComparison.OrdinalIgnoreCase)
+               || mimeType.Equals("application/javascript", StringComparison.OrdinalIgnoreCase)
+               || mimeType.Equals("text/markdown", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task<(string? Preview, bool IsTruncated, bool IsBinary)> TryReadTextPreviewAsync(string path, long fileLength)
+    {
+        if (!File.Exists(path))
+        {
+            return (null, false, true);
+        }
+
+        var bytesToRead = (int)Math.Min(MaxChatFileInlineBytes, Math.Max(0, fileLength));
+        if (bytesToRead == 0)
+        {
+            return (string.Empty, false, false);
+        }
+
+        var buffer = new byte[bytesToRead];
+        var read = 0;
+
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        read = await stream.ReadAsync(buffer, 0, bytesToRead);
+
+        if (read == 0)
+        {
+            return (string.Empty, false, false);
+        }
+
+        if (ContainsBinaryData(buffer.AsSpan(0, read)))
+        {
+            return (null, false, true);
+        }
+
+        try
+        {
+            var text = Encoding.UTF8.GetString(buffer, 0, read);
+            var truncated = fileLength > read;
+            return (text, truncated, false);
+        }
+        catch (DecoderFallbackException)
+        {
+            return (null, false, true);
+        }
+    }
+
+    private static bool ContainsBinaryData(ReadOnlySpan<byte> data)
+    {
+        foreach (var b in data)
+        {
+            if (b == 0)
+            {
+                return true;
+            }
+
+            if (b < 0x09)
+            {
+                return true;
+            }
+
+            if (b > 0x0D && b < 0x20)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static LlmClientRegistration CreateOllamaFallbackRegistration(LlmClientRegistration original, string message)
@@ -1358,6 +1721,8 @@ public partial class MainWindow : Window
         ResetAutoScroll(requestScroll: true);
         SyncSessionWithViewModel();
         _suppressMessageSync = false;
+
+        RefreshChatFiles(_activeProject, _activeSession);
 
         var state = EnsureProjectSession(projectKey);
         state.ActiveSessionId = session.Id;

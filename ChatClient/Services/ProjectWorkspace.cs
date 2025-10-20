@@ -34,4 +34,18 @@ public static class ProjectWorkspace
         Directory.CreateDirectory(filesDirectory);
         return filesDirectory;
     }
+
+    public static string GetChatFilesDirectory(ProjectSettings project, string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            throw new ArgumentException("Session id must be provided.", nameof(sessionId));
+        }
+
+        EnsureWorkspace(project);
+
+        var chatDirectory = Path.Combine(project.WorkspacePath!, "chats", sessionId, "files");
+        Directory.CreateDirectory(chatDirectory);
+        return chatDirectory;
+    }
 }

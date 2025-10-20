@@ -42,18 +42,22 @@
 
 ### Files
 
-- [ ] Projects have files and they will be sent along, or referred to, in the first chat in a conversation
-  - File summary plumbing exists in the request pipeline, but the current project-file workflow is unreliable; fix upload/persistence before re-enabling this milestone.
-  - Sidebar management UI is in place (`+ Add file...` and per-file delete), yet the backend needs additional work so uploaded files consistently land in `projects/<id>/files` and are available for context injection.
-- [ ] Chats will be able to upload files that are specific to that chat
-  - [ ] Anthropic might just use a message of type "text", not sure
-  - [ ] OpenAI
-  - [ ] Ollama
+- [x] Projects have files and they will be sent along, or referred to, in the first chat in a conversation
+  - Project uploads now reliably land in `projects/<id>/files` via the hardened `ProjectFileService`, and the sidebar refresh keeps names consistent even for non-local storage providers.
+  - Project file inventories are summarized by `ProjectFileSummaryBuilder` and appended to the first system context so the LLM can reference them immediately.
+- [x] Chats will be able to upload files that are specific to that chat
+  - [x] Anthropic
+  - [x] OpenAI
+  - [x] Ollama
+    - Each chat session persists its own files under `projects/<id>/chats/<session>/files`, exposes them in the UI, and contributes a dedicated "Chat files available..." summary that ships with the opening request for every provider.
+    - Uploads immediately inject readable previews (or binary notices) into the conversation history so providers receive the attachment content on the next turn.
 
 ### Persistence of memory in a single chat
 
-- [ ] For APIs that do not have a built-in memory functionality, send some kind of memory of this chat with each message.
+- [x] For APIs that do not have a built-in memory functionality, send some kind of memory of this chat with each message.
+  - Conversation history now travels with every request via `LlmRequest.History`, populated from the active session before dispatching through each provider client.
 - [ ] For APIs that do have some sort of memory functionality, take advantage of it.
+  - Still need to identify provider-specific conversation handles (if any) and integrate them so we can avoid resending full history when native memory is available.
 
 ### Availability of other chat memories in a project
 

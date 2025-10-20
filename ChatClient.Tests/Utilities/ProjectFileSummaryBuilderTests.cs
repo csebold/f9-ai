@@ -54,4 +54,31 @@ public class ProjectFileSummaryBuilderTests
             }
         }
     }
+
+    [Fact]
+    public void Build_UsesScopeNameWhenProvided()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "f9-chat-summary-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "notes.txt"), "hello");
+
+            var summary = ProjectFileSummaryBuilder.Build(root, scopeName: "Chat");
+
+            Assert.StartsWith("Chat files available", summary);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+                // best effort cleanup
+            }
+        }
+    }
 }

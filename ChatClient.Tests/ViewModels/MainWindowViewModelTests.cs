@@ -399,6 +399,81 @@ public class MainWindowViewModelTests
     }
 
     [Fact]
+    public void ReplaceChatFiles_PopulatesCollectionAndSummary()
+    {
+        var viewModel = new MainWindowViewModel(CreateRegistration(new StubLlmClient("Hello")));
+        var now = DateTimeOffset.UtcNow;
+        var files = new[]
+        {
+            new ProjectFile("design.md", "/tmp/design.md", 5120, now)
+        };
+
+        viewModel.ReplaceChatFiles(files, "Chat files available (1 file). Listing all files:\n- design.md");
+
+        Assert.True(viewModel.HasChatFiles);
+        Assert.Single(viewModel.ChatFiles);
+        Assert.Equal("design.md", viewModel.ChatFiles[0].Name);
+        Assert.Equal("Chat files available (1 file). Listing all files:\n- design.md", viewModel.CurrentChatFilesSummary);
+    }
+
+    [Fact]
+    public void ReplaceChatFiles_ClearsSummaryWhenNoFiles()
+    {
+        var viewModel = new MainWindowViewModel(CreateRegistration(new StubLlmClient("Hello")));
+        viewModel.ReplaceChatFiles(Array.Empty<ProjectFile>(), "ignored summary");
+
+        Assert.False(viewModel.HasChatFiles);
+        Assert.Empty(viewModel.ChatFiles);
+        Assert.Equal(string.Empty, viewModel.CurrentChatFilesSummary);
+    }
+
+    [Fact]
+    public async Task RegisterChatFileAttachmentAsync_AddsMessageWithPreview()
+    {
+        var viewModel = new MainWindowViewModel(CreateRegistration(new StubLlmClient("Hello")));
+        var file = new ProjectFile("note.txt", "/tmp/note.txt", 42, DateTimeOffset.UtcNow);
+
+        await viewModel.RegisterChatFileAttachmentAsync(file, "text/plain", "Sample content", isPreviewTruncated: false, isBinary: false);
+
+        var message = viewModel.Messages[^1];
+        Assert.Equal(MessageRole.User, message.Role);
+        Assert.Contains("note.txt", message.Content);
+        Assert.Contains("Sample content", message.Content);
+    }
+
+    [Fact]
+    public async Task SendCommand_IncludesChatFileAttachmentInHistory()
+    {
+        var client = new StubLlmClient("Assistant response");
+        var viewModel = new MainWindowViewModel(CreateRegistration(client));
+        
+        // Send an initial message to mark system context as sent
+        viewModel.Prompt = "First message";
+        await viewModel.SendCommand.ExecuteAsync(null);
+        
+        // Now attach a chat file
+        var file = new ProjectFile("document.txt", "/tmp/document.txt", 100, DateTimeOffset.UtcNow);
+        await viewModel.RegisterChatFileAttachmentAsync(file, "text/plain", "Biblical text content here", isPreviewTruncated: false, isBinary: false);
+        
+        // Send another message
+        viewModel.Prompt = "Summarize the attached text";
+        await viewModel.SendCommand.ExecuteAsync(null);
+        
+        // Verify that the second request includes the file attachment in history
+        Assert.Equal(2, client.Requests.Count);
+        var secondRequest = client.Requests[1];
+        
+        // History should include: first user message, first assistant response, file attachment message, and the new user message
+        Assert.Equal(4, secondRequest.History.Count);
+        
+        // Check that the file attachment content is in the history
+        var fileAttachmentMessage = secondRequest.History[2];
+        Assert.Equal(MessageRole.User, fileAttachmentMessage.Role);
+        Assert.Contains("document.txt", fileAttachmentMessage.Content);
+        Assert.Contains("Biblical text content here", fileAttachmentMessage.Content);
+    }
+
+    [Fact]
     public void ApplyProviderBranding_UpdatesIconPathAndTooltip()
     {
         var viewModel = new MainWindowViewModel(CreateRegistration(new StubLlmClient("Hello"), "ProviderZ", "model-x"));

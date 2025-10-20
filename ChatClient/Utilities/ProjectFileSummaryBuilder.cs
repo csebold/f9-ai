@@ -31,7 +31,7 @@ public static class ProjectFileSummaryBuilder
         "build"
     };
 
-    public static string Build(string? workspacePath, int maxFiles = DefaultMaxFiles)
+    public static string Build(string? workspacePath, int maxFiles = DefaultMaxFiles, string scopeName = "Project")
     {
         if (string.IsNullOrWhiteSpace(workspacePath))
         {
@@ -53,8 +53,12 @@ public static class ProjectFileSummaryBuilder
             }
 
             var builder = new StringBuilder();
+            var scopeLabel = string.IsNullOrWhiteSpace(scopeName)
+                ? "Project"
+                : scopeName.Trim();
 
-            builder.Append("Project files available (")
+            builder.Append(scopeLabel)
+                   .Append(" files available (")
                    .Append(totalFiles.ToString(CultureInfo.InvariantCulture))
                    .Append(totalFiles == 1 ? " file" : " files")
                    .Append("). Reference them by relative path when you need their contents. ");
