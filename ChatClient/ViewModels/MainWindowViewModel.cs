@@ -22,6 +22,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly Dictionary<string, BackgroundProcessItemViewModel> _processLookup = new(StringComparer.Ordinal);
 
     public ObservableCollection<Message> Messages { get; } = new();
+    public ObservableCollection<ProjectFileItemViewModel> ProjectFiles { get; } = new();
     public ObservableCollection<BackgroundProcessItemViewModel> BackgroundProcesses { get; } = new();
 
     [ObservableProperty]
@@ -42,6 +43,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private string _currentDescription = string.Empty;
+
+    [ObservableProperty]
+    private string _currentProjectFilesSummary = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasProjectFiles;
 
     [ObservableProperty]
     private bool _hasCustomProject;
@@ -67,7 +74,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private CancellationTokenSource? _responseCancellation;
     private string? _lastPrompt;
-    private bool _instructionsSent;
+    private bool _systemContextSent;
 
     public MainWindowViewModel(
         LlmClientRegistration? registration = null,
@@ -75,6 +82,7 @@ public partial class MainWindowViewModel : ViewModelBase
         string? projectInstructions = null,
         string? projectDescription = null,
         bool hasCustomProject = false,
+        string? projectFilesSummary = null,
         IEnumerable<Message>? initialMessages = null,
         IBackgroundProcessService? backgroundProcessService = null)
     {
@@ -88,15 +96,16 @@ public partial class MainWindowViewModel : ViewModelBase
         var name = string.IsNullOrWhiteSpace(projectName) ? DefaultProjectName : projectName.Trim();
         var instructions = projectInstructions?.Trim() ?? string.Empty;
         var description = projectDescription?.Trim() ?? string.Empty;
+        var filesSummary = projectFilesSummary?.Trim() ?? string.Empty;
 
         if (registration is null)
         {
             var fallbackRegistration = CreateFallbackRegistration("LLM provider not configured. Set LLM_PROVIDER and provider-specific API keys.");
-            ApplyContext(fallbackRegistration, name, instructions, description, hasCustomProject, isUpdate: false, emitStatusMessage: false);
+            ApplyContext(fallbackRegistration, name, instructions, description, filesSummary, hasCustomProject, isUpdate: false, emitStatusMessage: false);
         }
         else
         {
-            ApplyContext(registration, name, instructions, description, hasCustomProject, isUpdate: false, emitStatusMessage: true);
+            ApplyContext(registration, name, instructions, description, filesSummary, hasCustomProject, isUpdate: false, emitStatusMessage: true);
         }
     }
 
@@ -118,10 +127,37 @@ public partial class MainWindowViewModel : ViewModelBase
         string instructions,
         string description,
         bool hasCustomProject,
+        string projectFilesSummary = "",
         bool isUpdate = true,
         bool emitStatusMessage = true)
     {
-        ApplyContext(registration, projectName, instructions, description, hasCustomProject, isUpdate, emitStatusMessage);
+        ApplyContext(registration, projectName, instructions, description, projectFilesSummary?.Trim() ?? string.Empty, hasCustomProject, isUpdate, emitStatusMessage);
+    }
+
+    public void ReplaceProjectFiles(IEnumerable<ProjectFile> files, string summary)
+    {
+        ProjectFiles.Clear();
+
+        if (files is not null)
+        {
+            foreach (var file in files)
+            {
+                if (file is not null)
+                {
+                    ProjectFiles.Add(new ProjectFileItemViewModel(file));
+                }
+            }
+        }
+
+        HasProjectFiles = ProjectFiles.Count > 0;
+        CurrentProjectFilesSummary = HasProjectFiles
+            ? summary?.Trim() ?? string.Empty
+            : string.Empty;
+
+        if (!Messages.Any(message => message is { IsUser: true } or { IsAssistant: true }))
+        {
+            _systemContextSent = false;
+        }
     }
 
     private LlmClientRegistration CreateFallbackRegistration(string message) =>
@@ -221,6 +257,30 @@ public partial class MainWindowViewModel : ViewModelBase
         await SendCoreAsync(_lastPrompt, appendUserMessage: false);
     }
 
+    private string BuildSystemContext()
+    {
+        var hasInstructions = !string.IsNullOrWhiteSpace(CurrentInstructions);
+        var hasFileSummary = !string.IsNullOrWhiteSpace(CurrentProjectFilesSummary);
+
+        if (!hasInstructions && !hasFileSummary)
+        {
+            return string.Empty;
+        }
+
+        if (hasInstructions && !hasFileSummary)
+        {
+            return CurrentInstructions.Trim();
+        }
+
+        if (!hasInstructions && hasFileSummary)
+        {
+            return CurrentProjectFilesSummary.Trim();
+        }
+
+        var separator = $"{Environment.NewLine}{Environment.NewLine}";
+        return $"{CurrentInstructions.Trim()}{separator}{CurrentProjectFilesSummary.Trim()}";
+    }
+
     private async Task SendCoreAsync(string prompt, bool appendUserMessage)
     {
         _lastPrompt = prompt;
@@ -241,13 +301,14 @@ public partial class MainWindowViewModel : ViewModelBase
             IsResponding = true;
             StatusMessage = $"Requesting response from {CurrentProvider} ({CurrentModel})...";
 
-            var includeInstructions = !_instructionsSent && !string.IsNullOrWhiteSpace(CurrentInstructions);
-            var request = new LlmRequest(prompt, CurrentInstructions, includeInstructions);
+            var systemContext = BuildSystemContext();
+            var includeSystemContext = !_systemContextSent && !string.IsNullOrWhiteSpace(systemContext);
+            var request = new LlmRequest(prompt, systemContext, includeSystemContext);
             var response = await _llmClient.GetResponseAsync(request, cancellation.Token);
 
-            if (includeInstructions)
+            if (includeSystemContext)
             {
-                _instructionsSent = true;
+                _systemContextSent = true;
             }
 
             stopwatch.Stop();
@@ -339,10 +400,18 @@ public partial class MainWindowViewModel : ViewModelBase
             AddMessage("System", "Welcome to Foundry-9 AI.", MessageRole.System);
         }
 
-        _instructionsSent = Messages.Any(message => message is { IsUser: true } or { IsAssistant: true });
+        _systemContextSent = Messages.Any(message => message is { IsUser: true } or { IsAssistant: true });
     }
 
-    private void ApplyContext(LlmClientRegistration registration, string projectName, string instructions, string description, bool hasCustomProject, bool isUpdate, bool emitStatusMessage)
+    private void ApplyContext(
+        LlmClientRegistration registration,
+        string projectName,
+        string instructions,
+        string description,
+        string projectFilesSummary,
+        bool hasCustomProject,
+        bool isUpdate,
+        bool emitStatusMessage)
     {
         _registration = registration ?? throw new ArgumentNullException(nameof(registration));
         _llmClient = registration.Client;
@@ -355,6 +424,7 @@ public partial class MainWindowViewModel : ViewModelBase
             : projectName.Trim();
         CurrentInstructions = instructions?.Trim() ?? string.Empty;
         CurrentDescription = description?.Trim() ?? string.Empty;
+        CurrentProjectFilesSummary = projectFilesSummary?.Trim() ?? string.Empty;
         HasCustomProject = hasCustomProject;
 
         StatusMessage = $"Ready - {registration.ProviderDisplayName} ({registration.ModelId})";
@@ -376,6 +446,10 @@ public partial class MainWindowViewModel : ViewModelBase
         if (!string.IsNullOrWhiteSpace(CurrentInstructions))
         {
             message += $"{Environment.NewLine}Project instructions are active.";
+        }
+        if (!string.IsNullOrWhiteSpace(CurrentProjectFilesSummary))
+        {
+            message += $"{Environment.NewLine}Project files will be summarized on your first prompt.";
         }
 
         AddMessage("System", message, MessageRole.System);

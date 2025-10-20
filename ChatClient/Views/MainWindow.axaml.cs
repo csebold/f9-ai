@@ -5,12 +5,14 @@ using System.Collections.Specialized;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Sockets;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using ChatClient.Models;
 using ChatClient.Services;
@@ -31,6 +33,7 @@ public partial class MainWindow : Window
     private readonly IBackgroundProcessService _backgroundProcessService;
     private readonly IOllamaProcessManager _ollamaProcessManager;
     private readonly IProviderBrandingService _providerBrandingService;
+    private readonly IProjectFileService _projectFileService;
     private readonly ObservableCollection<ProjectListItem> _projectItems = new();
     private readonly ObservableCollection<ChatSessionListItem> _sessionItems = new();
     private readonly Dictionary<string, ProjectSessionState> _sessionStates = new(StringComparer.Ordinal);
@@ -54,6 +57,7 @@ public partial class MainWindow : Window
     private readonly bool _ownsBackgroundService;
     private readonly bool _ownsOllamaManager;
     private readonly bool _ownsProviderBrandingService;
+    private readonly bool _ownsProjectFileService;
 
     public MainWindow()
         : this(
@@ -62,7 +66,8 @@ public partial class MainWindow : Window
             new SessionPersistenceService(),
             new AppSettings(),
             activeProject: null,
-            sessionSnapshot: new SessionStoreSnapshot())
+            sessionSnapshot: new SessionStoreSnapshot(),
+            projectFileService: new ProjectFileService())
     {
     }
 
@@ -75,7 +80,8 @@ public partial class MainWindow : Window
         SessionStoreSnapshot? sessionSnapshot,
         IBackgroundProcessService? backgroundProcessService = null,
         IOllamaProcessManager? ollamaProcessManager = null,
-        IProviderBrandingService? providerBrandingService = null)
+        IProviderBrandingService? providerBrandingService = null,
+        IProjectFileService? projectFileService = null)
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _modelCatalogService = modelCatalogService ?? throw new ArgumentNullException(nameof(modelCatalogService));
@@ -86,9 +92,11 @@ public partial class MainWindow : Window
         _backgroundProcessService = backgroundProcessService ?? new BackgroundProcessService();
         _ollamaProcessManager = ollamaProcessManager ?? new OllamaProcessManager(_backgroundProcessService);
         _providerBrandingService = providerBrandingService ?? new ProviderBrandingService();
+        _projectFileService = projectFileService ?? new ProjectFileService();
         _ownsBackgroundService = backgroundProcessService is null;
         _ownsOllamaManager = ollamaProcessManager is null;
         _ownsProviderBrandingService = providerBrandingService is null;
+        _ownsProjectFileService = projectFileService is null;
         _backgroundProcessService.ProcessChanged += OnBackgroundProcessChanged;
         ApplyOllamaRuntimeDefaults();
 
@@ -753,11 +761,6 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (project is not null)
-        {
-            ProjectWorkspace.EnsureWorkspace(project);
-        }
-
         LlmClientRegistration registration;
         try
         {
@@ -768,6 +771,16 @@ public partial class MainWindow : Window
             var detail = $"LLM configuration error: {ex.Message}";
             var provider = project?.Provider ?? _settings.Provider;
             registration = new LlmClientRegistration(new FallbackLlmClient(detail), provider, "Unavailable", "N/A", detail);
+        }
+
+        var projectFilesSummary = string.Empty;
+        IReadOnlyList<ProjectFile> projectFiles = Array.Empty<ProjectFile>();
+        if (project is not null)
+        {
+            ProjectWorkspace.EnsureWorkspace(project);
+            var filesDirectory = ProjectWorkspace.GetProjectFilesDirectory(project);
+            projectFiles = _projectFileService.GetFiles(project);
+            projectFilesSummary = ProjectFileSummaryBuilder.Build(filesDirectory);
         }
 
         string? ollamaWarning = null;
@@ -852,7 +865,8 @@ public partial class MainWindow : Window
             var description = project?.Description ?? string.Empty;
             var hasCustomProject = project is not null;
 
-            _viewModel.ChangeProject(registration, projectName, instructions, description, hasCustomProject, isUpdate, emitStatusMessage);
+            _viewModel.ReplaceProjectFiles(projectFiles, projectFilesSummary);
+            _viewModel.ChangeProject(registration, projectName, instructions, description, hasCustomProject, projectFilesSummary, isUpdate, emitStatusMessage);
             _viewModel.ApplyProviderBranding(providerBranding);
 
             if (ollamaError is not null)
@@ -894,6 +908,157 @@ public partial class MainWindow : Window
         {
             await PostSystemNoticeAsync(ollamaWarning, isError: false);
         }
+    }
+
+    private async void AddProjectFileButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var project = _activeProject;
+        if (project is null)
+        {
+            _viewModel.StatusMessage = "Project files are available after saving a project.";
+            return;
+        }
+
+        if (StorageProvider is null)
+        {
+            _viewModel.StatusMessage = "File picker is not available on this platform.";
+            return;
+        }
+
+        var options = new FilePickerOpenOptions
+        {
+            AllowMultiple = true,
+            Title = "Add project files"
+        };
+
+        var files = await StorageProvider.OpenFilePickerAsync(options);
+        if (files is null || files.Count == 0)
+        {
+            return;
+        }
+
+        var addedCount = 0;
+        foreach (var file in files)
+        {
+            try
+            {
+                await AddProjectFileAsync(project, file).ConfigureAwait(false);
+                addedCount++;
+            }
+            catch (Exception ex)
+            {
+                await PostSystemNoticeAsync($"Failed to add '{file.Name}': {ex.Message}", isError: true);
+            }
+        }
+
+        RefreshProjectFiles(project);
+
+        if (addedCount > 0)
+        {
+            _viewModel.StatusMessage = addedCount == 1
+                ? "Added 1 file to the project."
+                : $"Added {addedCount} files to the project.";
+        }
+    }
+
+    private async void DeleteProjectFileButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        if (_activeProject is null)
+        {
+            return;
+        }
+
+        if (sender is not Button button || button.Tag is not ProjectFileItemViewModel item)
+        {
+            return;
+        }
+
+        try
+        {
+            await _projectFileService.DeleteFileAsync(_activeProject, item.Name, CancellationToken.None).ConfigureAwait(false);
+            RefreshProjectFiles(_activeProject);
+            _viewModel.StatusMessage = $"Removed '{item.Name}' from the project.";
+        }
+        catch (Exception ex)
+        {
+            await PostSystemNoticeAsync($"Failed to remove '{item.Name}': {ex.Message}", isError: true);
+        }
+    }
+
+    private async Task AddProjectFileAsync(ProjectSettings project, IStorageFile file)
+    {
+        if (project is null)
+        {
+            throw new ArgumentNullException(nameof(project));
+        }
+
+        if (file is null)
+        {
+            throw new ArgumentNullException(nameof(file));
+        }
+
+        var localPath = file.TryGetLocalPath();
+        if (!string.IsNullOrWhiteSpace(localPath) && File.Exists(localPath))
+        {
+            await _projectFileService.AddFileAsync(project, localPath, CancellationToken.None).ConfigureAwait(false);
+            return;
+        }
+
+        var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        await using var sourceStream = await file.OpenReadAsync();
+        await using (var tempStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            await sourceStream.CopyToAsync(tempStream);
+        }
+
+        try
+        {
+            await _projectFileService.AddFileAsync(project, tempPath, CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+            }
+            catch
+            {
+                // best effort cleanup
+            }
+        }
+    }
+
+    private void RefreshProjectFiles(ProjectSettings? project)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        if (project is null)
+        {
+            _viewModel.ReplaceProjectFiles(Array.Empty<ProjectFile>(), string.Empty);
+            return;
+        }
+
+        var filesDirectory = ProjectWorkspace.GetProjectFilesDirectory(project);
+        var files = _projectFileService.GetFiles(project);
+        var summary = ProjectFileSummaryBuilder.Build(filesDirectory);
+
+        _viewModel.ReplaceProjectFiles(files, summary);
     }
 
     private static LlmClientRegistration CreateOllamaFallbackRegistration(LlmClientRegistration original, string message)

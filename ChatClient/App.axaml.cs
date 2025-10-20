@@ -26,6 +26,7 @@ public partial class App : Application
     private AppSettings _settings = null!;
     private IStartupInitializer _startupInitializer = null!;
     private IProviderBrandingService _providerBrandingService = null!;
+    private IProjectFileService _projectFileService = null!;
 
     private static readonly TimeSpan DefaultStartupTimeout = TimeSpan.FromSeconds(15);
     private static TimeSpan? _startupTimeoutOverride;
@@ -55,6 +56,7 @@ public partial class App : Application
             _projectWorkspaceService = new ProjectWorkspaceService();
             _sessionPersistenceService = new SessionPersistenceService();
             _providerBrandingService = new ProviderBrandingService();
+            _projectFileService = new ProjectFileService();
             _startupInitializer = new StartupInitializer(_settingsService, _projectWorkspaceService, _providerBrandingService);
             _backgroundProcessService = new BackgroundProcessService();
             _ollamaProcessManager = new OllamaProcessManager(_backgroundProcessService);
@@ -159,7 +161,8 @@ public partial class App : Application
                     sessionSnapshot,
                     _backgroundProcessService,
                     _ollamaProcessManager,
-                    _providerBrandingService)
+                    _providerBrandingService,
+                    _projectFileService)
                 {
                     DataContext = mainWindowViewModel
                 };

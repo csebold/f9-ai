@@ -33,7 +33,10 @@
 
 ### Files
 
-- [ ] Projects have files and they will be sent along, or referred to, in the first chat in a conversation
+- [x] Projects have files and they will be sent along, or referred to, in the first chat in a conversation
+  - File summaries ride along with the first system message so providers without native file attachments (OpenAI, Ollama, OpenRouter) still see the project context.
+  - Anthropic's `system` field makes this injection straightforward, while other APIs require merging the summary into regular chat payloads until they expose richer file-handling endpoints.
+  - The sidebar now lists project uploads between the project picker and chat sessions, with `+ Add file...` and per-file delete controls. Uploads are stored under the project's workspace (`projects/<id>/files`), so default (unsaved) projects still need a saved project before file management becomes active.
 - [ ] Chats will be able to upload files that are specific to that chat
 
 ### Persistence of memory in a single chat

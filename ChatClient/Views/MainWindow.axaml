@@ -135,6 +135,73 @@
             <Grid ColumnDefinitions="*,Auto"
                   VerticalAlignment="Center">
               <TextBlock Grid.Column="0"
+                         Text="Project Files"
+                         FontSize="16"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource AuthorForegroundBrush}" />
+              <Button Grid.Column="1"
+                      Content="+ Add file..."
+                      IsEnabled="{Binding HasCustomProject}"
+                      Click="AddProjectFileButton_OnClick" />
+            </Grid>
+
+            <Border Background="{DynamicResource ConversationPanelBackgroundBrush}"
+                    CornerRadius="6"
+                    Padding="8">
+              <StackPanel>
+                <TextBlock Text="No files uploaded yet."
+                           Foreground="{DynamicResource AuthorForegroundBrush}"
+                           FontSize="12"
+                           IsVisible="{Binding HasProjectFiles, Converter={StaticResource BooleanNegationConverter}}" />
+                <ListBox ItemsSource="{Binding ProjectFiles}"
+                         IsVisible="{Binding HasProjectFiles}"
+                         BorderThickness="0">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ProjectFileItemViewModel">
+                      <Grid ColumnDefinitions="*,Auto"
+                            RowDefinitions="Auto,Auto"
+                            ColumnSpacing="8"
+                            Margin="0 4">
+                        <TextBlock Grid.Column="0"
+                                   Grid.Row="0"
+                                   Text="{Binding Name}"
+                                   FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource MessageForegroundBrush}" />
+                        <TextBlock Grid.Column="0"
+                                   Grid.Row="1"
+                                   Text="{Binding SizeDescription}"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource AuthorForegroundBrush}" />
+                        <Button Grid.Column="1"
+                                Grid.Row="0"
+                                Grid.RowSpan="2"
+                                Background="Transparent"
+                                BorderBrush="{x:Null}"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Center"
+                                Click="DeleteProjectFileButton_OnClick"
+                                Tag="{Binding}">
+                          <Path Width="14"
+                                Height="14"
+                                Stretch="Uniform"
+                                Fill="{DynamicResource AuthorForegroundBrush}"
+                                Data="M4 2 L12 2 L12 4 L13 4 L13 5 L3 5 L3 4 L4 4 Z M5 5 L5 13 C5 13.5523 5.44772 14 6 14 L10 14 C10.5523 14 11 13.5523 11 13 L11 5 Z" />
+                        </Button>
+                      </Grid>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <Separator />
+
+          <StackPanel Spacing="8">
+            <Grid ColumnDefinitions="*,Auto"
+                  VerticalAlignment="Center">
+              <TextBlock Grid.Column="0"
                          Text="Chat Sessions"
                          FontSize="16"
                          FontWeight="SemiBold"

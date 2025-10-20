@@ -25,4 +25,13 @@ public static class ProjectWorkspace
 
         Directory.CreateDirectory(project.WorkspacePath);
     }
+
+    public static string GetProjectFilesDirectory(ProjectSettings project)
+    {
+        EnsureWorkspace(project);
+
+        var filesDirectory = Path.Combine(project.WorkspacePath!, "files");
+        Directory.CreateDirectory(filesDirectory);
+        return filesDirectory;
+    }
 }

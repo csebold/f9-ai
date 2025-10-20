@@ -111,6 +111,52 @@ public class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task SendCommand_IncludesFileSummaryWhenProvided()
+    {
+        var client = new StubLlmClient("Response");
+        var fileSummary = "Project files available (2 files). Listing all files:\n- README.md\n- src/Program.cs";
+        var viewModel = new MainWindowViewModel(
+            CreateRegistration(client),
+            projectFilesSummary: fileSummary);
+
+        viewModel.Prompt = "Question";
+        await viewModel.SendCommand.ExecuteAsync(null);
+
+        Assert.NotNull(client.LastRequest);
+        Assert.True(client.LastRequest!.IncludeInstructions);
+        Assert.Equal(fileSummary.Trim(), client.LastRequest.Instructions);
+
+        viewModel.Prompt = "Another";
+        await viewModel.SendCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, client.Requests.Count);
+        Assert.False(client.Requests[1].IncludeInstructions);
+    }
+
+    [Fact]
+    public async Task SendCommand_ComposesInstructionsAndFileSummary()
+    {
+        var client = new StubLlmClient("Response");
+        var instructions = "Follow the workflow.";
+        var fileSummary = "Project files available (1 file). Listing all files:\n- README.md";
+        var viewModel = new MainWindowViewModel(
+            CreateRegistration(client),
+            projectInstructions: instructions,
+            projectFilesSummary: fileSummary);
+
+        viewModel.Prompt = "Question";
+        await viewModel.SendCommand.ExecuteAsync(null);
+
+        var expected = string.Join(Environment.NewLine + Environment.NewLine, new[]
+        {
+            instructions,
+            fileSummary
+        });
+
+        Assert.Equal(expected, client.LastRequest!.Instructions);
+    }
+
+    [Fact]
     public async Task SendCommand_IgnoresExecution_WhenPromptIsEmptyAfterTrim()
     {
         var viewModel = new MainWindowViewModel(CreateRegistration(new StubLlmClient("Hello")));
@@ -263,13 +309,64 @@ public class MainWindowViewModelTests
         Assert.Contains("Project B", statusMessage.Content);
         Assert.Contains("Project instructions are active.", statusMessage.Content);
         Assert.Contains("Connected to ProviderB (model-b).", statusMessage.Content);
+        Assert.DoesNotContain("Project files will be summarized", statusMessage.Content);
         Assert.Equal("ProviderB", viewModel.CurrentProvider);
         Assert.Equal("model-b", viewModel.CurrentModel);
         Assert.Equal("Project B", viewModel.CurrentProjectName);
         Assert.Equal("Project overview.", viewModel.CurrentDescription);
         Assert.True(viewModel.HasCustomProject);
+        Assert.Equal(string.Empty, viewModel.CurrentProjectFilesSummary);
         Assert.Equal("ProviderB", viewModel.CurrentProviderTooltip);
         Assert.Equal("Ready - ProviderB (model-b)", viewModel.StatusMessage);
+    }
+
+    [Fact]
+    public void ChangeProject_IncludesFileSummaryHintWhenPresent()
+    {
+        var viewModel = new MainWindowViewModel(CreateRegistration(new StubLlmClient("First"), "ProviderA", "model-a"));
+        var newRegistration = CreateRegistration(new StubLlmClient("Second"), "ProviderB", "model-b");
+        const string fileSummary = "Project files available (3 files). Listing first 3 files:\n- a\n- b\n- c";
+
+        viewModel.ChangeProject(
+            newRegistration,
+            "Project B",
+            "Follow the rules.",
+            "Project overview.",
+            hasCustomProject: true,
+            projectFilesSummary: fileSummary);
+
+        var statusMessage = viewModel.Messages[^1];
+        Assert.Contains("Project files will be summarized on your first prompt.", statusMessage.Content);
+        Assert.Equal(fileSummary, viewModel.CurrentProjectFilesSummary);
+    }
+
+    [Fact]
+    public void ReplaceProjectFiles_PopulatesCollectionAndSummary()
+    {
+        var viewModel = new MainWindowViewModel(CreateRegistration(new StubLlmClient("Hello")));
+        var now = DateTimeOffset.UtcNow;
+        var files = new[]
+        {
+            new ProjectFile("a.txt", "/tmp/a.txt", 1200, now)
+        };
+
+        viewModel.ReplaceProjectFiles(files, "Project files available (1 file). Listing all files:\n- a.txt");
+
+        Assert.True(viewModel.HasProjectFiles);
+        Assert.Single(viewModel.ProjectFiles);
+        Assert.Equal("a.txt", viewModel.ProjectFiles[0].Name);
+        Assert.Equal("Project files available (1 file). Listing all files:\n- a.txt", viewModel.CurrentProjectFilesSummary);
+    }
+
+    [Fact]
+    public void ReplaceProjectFiles_ClearsSummaryWhenNoFiles()
+    {
+        var viewModel = new MainWindowViewModel(CreateRegistration(new StubLlmClient("Hello")));
+        viewModel.ReplaceProjectFiles(Array.Empty<ProjectFile>(), "ignored summary");
+
+        Assert.False(viewModel.HasProjectFiles);
+        Assert.Empty(viewModel.ProjectFiles);
+        Assert.Equal(string.Empty, viewModel.CurrentProjectFilesSummary);
     }
 
     [Fact]
