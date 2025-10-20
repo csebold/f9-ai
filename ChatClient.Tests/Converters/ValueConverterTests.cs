@@ -83,7 +83,7 @@ public class ValueConverterTests
     }
 
     [Theory]
-    [InlineData(MessageRole.User, TextAlignment.Right)]
+    [InlineData(MessageRole.User, TextAlignment.Left)]
     [InlineData(MessageRole.Assistant, TextAlignment.Left)]
     [InlineData(MessageRole.System, TextAlignment.Left)]
     public void MessageRoleToTextAlignmentConverter_MapsAlignment(MessageRole role, TextAlignment expected)

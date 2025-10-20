@@ -16,7 +16,7 @@ public sealed class MessageRoleToTextAlignmentConverter : IValueConverter
     {
         if (value is MessageRole role)
         {
-            return role == MessageRole.User ? TextAlignment.Right : TextAlignment.Left;
+            return TextAlignment.Left;
         }
 
         return AvaloniaProperty.UnsetValue;
