@@ -229,6 +229,14 @@
               </ListBox.ItemTemplate>
             </ListBox>
           </StackPanel>
+
+          <Separator />
+
+          <Button Content="View Chat Debug Log"
+                  HorizontalAlignment="Stretch"
+                  Padding="12 8"
+                  Click="OpenChatLogButton_OnClick"
+                  IsEnabled="{Binding ChatLogPath, Converter={StaticResource StringNotEmptyToBoolConverter}}" />
         </StackPanel>
       </ScrollViewer>
     </Border>
@@ -469,7 +477,8 @@
         </StackPanel>
       </Border>
 
-      <Border Grid.Row="4"
+
+      <Border Grid.Row="5"
               Background="{DynamicResource ComposerBackgroundBrush}"
               CornerRadius="6"
               Padding="{DynamicResource StatusContainerPadding}">

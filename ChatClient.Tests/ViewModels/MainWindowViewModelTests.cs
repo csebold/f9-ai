@@ -84,6 +84,35 @@ public class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task SendCommand_BuildsConversationHistory()
+    {
+        var client = new StubLlmClient("Assistant reply");
+        var viewModel = new MainWindowViewModel(CreateRegistration(client));
+
+        viewModel.Prompt = "Hello";
+        await viewModel.SendCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, client.Requests.Count);
+        var firstHistory = client.Requests[0].History;
+        Assert.Single(firstHistory);
+        Assert.Equal(MessageRole.User, firstHistory[0].Role);
+        Assert.Equal("Hello", firstHistory[0].Content);
+
+        viewModel.Prompt = "Second question";
+        await viewModel.SendCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, client.Requests.Count);
+        var secondHistory = client.Requests[1].History;
+        Assert.Equal(3, secondHistory.Count);
+        Assert.Equal(MessageRole.User, secondHistory[0].Role);
+        Assert.Equal("Hello", secondHistory[0].Content);
+        Assert.Equal(MessageRole.Assistant, secondHistory[1].Role);
+        Assert.Equal("Assistant reply", secondHistory[1].Content);
+        Assert.Equal(MessageRole.User, secondHistory[2].Role);
+        Assert.Equal("Second question", secondHistory[2].Content);
+    }
+
+    [Fact]
     public async Task SendCommand_IncludesInstructionsOnFirstMessageOnly()
     {
         var client = new StubLlmClient("Response");

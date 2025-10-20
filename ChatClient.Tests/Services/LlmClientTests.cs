@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using ChatClient.Models;
 using ChatClient.Services;
 using Xunit;
 
@@ -74,6 +75,45 @@ public class LlmClientTests
         Assert.Equal("system", messages[0].GetProperty("role").GetString());
         Assert.Equal("Follow these instructions.", messages[0].GetProperty("content").GetString());
         Assert.Equal("user", messages[1].GetProperty("role").GetString());
+    }
+
+    [Fact]
+    public async Task OpenAiClient_IncludesConversationHistory()
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {"choices":[{"message":{"content":"ok"}}]}
+                """)
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+
+        var client = new OpenAiLlmClient(httpClient, "api-key", "gpt-test", httpClient.BaseAddress, 0.5);
+
+        var history = new[]
+        {
+            new LlmMessage(MessageRole.User, "Hello"),
+            new LlmMessage(MessageRole.Assistant, "Hi there"),
+            new LlmMessage(MessageRole.User, "How are you?")
+        };
+
+        _ = await client.GetResponseAsync(new LlmRequest("What can you do?", history: history));
+
+        using var document = JsonDocument.Parse(handler.LastRequestContent!);
+        var messages = document.RootElement.GetProperty("messages");
+        Assert.Equal(4, messages.GetArrayLength());
+        Assert.Equal("user", messages[0].GetProperty("role").GetString());
+        Assert.Equal("Hello", messages[0].GetProperty("content").GetString());
+        Assert.Equal("assistant", messages[1].GetProperty("role").GetString());
+        Assert.Equal("Hi there", messages[1].GetProperty("content").GetString());
+        Assert.Equal("user", messages[2].GetProperty("role").GetString());
+        Assert.Equal("How are you?", messages[2].GetProperty("content").GetString());
+        Assert.Equal("user", messages[3].GetProperty("role").GetString());
+        Assert.Equal("What can you do?", messages[3].GetProperty("content").GetString());
     }
 
     [Fact]
@@ -153,6 +193,45 @@ public class LlmClientTests
     }
 
     [Fact]
+    public async Task AnthropicClient_IncludesConversationHistory()
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {"content":[{"type":"text","text":"ok"}]}
+                """)
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://anthropic.local/v1/")
+        };
+
+        var client = new AnthropicLlmClient(httpClient, "anthropic-key", "claude", httpClient.BaseAddress, 512);
+
+        var history = new[]
+        {
+            new LlmMessage(MessageRole.User, "Hello"),
+            new LlmMessage(MessageRole.Assistant, "Hi there"),
+            new LlmMessage(MessageRole.User, "How are you?")
+        };
+
+        _ = await client.GetResponseAsync(new LlmRequest("What can you do?", history: history));
+
+        using var document = JsonDocument.Parse(handler.LastRequestContent!);
+        var messages = document.RootElement.GetProperty("messages");
+        Assert.Equal(4, messages.GetArrayLength());
+        Assert.Equal("user", messages[0].GetProperty("role").GetString());
+        Assert.Equal("Hello", messages[0].GetProperty("content")[0].GetProperty("text").GetString());
+        Assert.Equal("assistant", messages[1].GetProperty("role").GetString());
+        Assert.Equal("Hi there", messages[1].GetProperty("content")[0].GetProperty("text").GetString());
+        Assert.Equal("user", messages[2].GetProperty("role").GetString());
+        Assert.Equal("How are you?", messages[2].GetProperty("content")[0].GetProperty("text").GetString());
+        Assert.Equal("user", messages[3].GetProperty("role").GetString());
+        Assert.Equal("What can you do?", messages[3].GetProperty("content")[0].GetProperty("text").GetString());
+    }
+
+    [Fact]
     public async Task AnthropicClient_ThrowsWhenNoTextContent()
     {
         var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
@@ -197,6 +276,45 @@ public class LlmClientTests
         Assert.Equal("router-key", request.Headers.Authorization?.Parameter);
         Assert.Equal("https://app.local", request.Headers.GetValues("HTTP-Referer").Single());
         Assert.Equal("Foundry", request.Headers.GetValues("X-Title").Single());
+    }
+
+    [Fact]
+    public async Task OpenRouterClient_IncludesConversationHistory()
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {"choices":[{"message":{"content":"ok"}}]}
+                """)
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://openrouter.local/api/v1/")
+        };
+
+        var client = new OpenRouterLlmClient(httpClient, "router-key", "router-model", httpClient.BaseAddress);
+
+        var history = new[]
+        {
+            new LlmMessage(MessageRole.User, "Hello"),
+            new LlmMessage(MessageRole.Assistant, "Hi there"),
+            new LlmMessage(MessageRole.User, "How are you?")
+        };
+
+        _ = await client.GetResponseAsync(new LlmRequest("What can you do?", history: history));
+
+        using var document = JsonDocument.Parse(handler.LastRequestContent!);
+        var messages = document.RootElement.GetProperty("messages");
+        Assert.Equal(4, messages.GetArrayLength());
+        Assert.Equal("user", messages[0].GetProperty("role").GetString());
+        Assert.Equal("Hello", messages[0].GetProperty("content").GetString());
+        Assert.Equal("assistant", messages[1].GetProperty("role").GetString());
+        Assert.Equal("Hi there", messages[1].GetProperty("content").GetString());
+        Assert.Equal("user", messages[2].GetProperty("role").GetString());
+        Assert.Equal("How are you?", messages[2].GetProperty("content").GetString());
+        Assert.Equal("user", messages[3].GetProperty("role").GetString());
+        Assert.Equal("What can you do?", messages[3].GetProperty("content").GetString());
     }
 
     [Fact]
@@ -302,6 +420,45 @@ public class LlmClientTests
         Assert.Equal(2, messages.GetArrayLength());
         Assert.Equal("system", messages[0].GetProperty("role").GetString());
         Assert.Equal("System instructions", messages[0].GetProperty("content").GetString());
+    }
+
+    [Fact]
+    public async Task OllamaClient_IncludesConversationHistory()
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {"message":{"content":"ok"}}
+                """)
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost:9000/")
+        };
+
+        var client = new OllamaLlmClient(httpClient, "llama3", httpClient.BaseAddress);
+
+        var history = new[]
+        {
+            new LlmMessage(MessageRole.User, "Hello"),
+            new LlmMessage(MessageRole.Assistant, "Hi there"),
+            new LlmMessage(MessageRole.User, "How are you?")
+        };
+
+        _ = await client.GetResponseAsync(new LlmRequest("What can you do?", history: history));
+
+        using var document = JsonDocument.Parse(handler.LastRequestContent!);
+        var messages = document.RootElement.GetProperty("messages");
+        Assert.Equal(4, messages.GetArrayLength());
+        Assert.Equal("user", messages[0].GetProperty("role").GetString());
+        Assert.Equal("Hello", messages[0].GetProperty("content").GetString());
+        Assert.Equal("assistant", messages[1].GetProperty("role").GetString());
+        Assert.Equal("Hi there", messages[1].GetProperty("content").GetString());
+        Assert.Equal("user", messages[2].GetProperty("role").GetString());
+        Assert.Equal("How are you?", messages[2].GetProperty("content").GetString());
+        Assert.Equal("user", messages[3].GetProperty("role").GetString());
+        Assert.Equal("What can you do?", messages[3].GetProperty("content").GetString());
     }
 
     [Fact]

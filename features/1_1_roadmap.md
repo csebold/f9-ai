@@ -30,14 +30,25 @@
 - [x] Send the instructions along with the first chat in a conversation
   - LLM requests now treat project instructions as a system message on the first successful turn of each conversation (or retry until one succeeds).
   - Switching chats or clearing history resets the flag so fresh sessions automatically resend the project guidance.
+- [x] Anthropic uses a "system" parameter; use that, particularly with the first message in a new chat: https://docs.claude.com/en/docs/build-with-claude/prompt-engineering/system-prompts#how-to-give-claude-a-role
+- [x] OpenAI
+  - [x] Responses API: https://community.openai.com/t/system-prompt-in-responses-api/1144116
+  - [x] Chat Completions API: Is there a "system" role?
+- [x] OpenRouter
+  - [x] However Chat Completions for OpenAI works, this should work
+- [x] Ollama API
+  - [x] Use role of "system" for first message and that should work for prompt sending
+
 
 ### Files
 
-- [x] Projects have files and they will be sent along, or referred to, in the first chat in a conversation
-  - File summaries ride along with the first system message so providers without native file attachments (OpenAI, Ollama, OpenRouter) still see the project context.
-  - Anthropic's `system` field makes this injection straightforward, while other APIs require merging the summary into regular chat payloads until they expose richer file-handling endpoints.
-  - The sidebar now lists project uploads between the project picker and chat sessions, with `+ Add file...` and per-file delete controls. Uploads are stored under the project's workspace (`projects/<id>/files`), so default (unsaved) projects still need a saved project before file management becomes active.
+- [ ] Projects have files and they will be sent along, or referred to, in the first chat in a conversation
+  - File summary plumbing exists in the request pipeline, but the current project-file workflow is unreliable; fix upload/persistence before re-enabling this milestone.
+  - Sidebar management UI is in place (`+ Add file...` and per-file delete), yet the backend needs additional work so uploaded files consistently land in `projects/<id>/files` and are available for context injection.
 - [ ] Chats will be able to upload files that are specific to that chat
+  - [ ] Anthropic might just use a message of type "text", not sure
+  - [ ] OpenAI
+  - [ ] Ollama
 
 ### Persistence of memory in a single chat
 
@@ -51,6 +62,18 @@
 ### Customization of how we summarize
 
 - [ ] Options for summarization using the current model or another, cheaper LLM model will be available.
+- [ ] Chat summarization works along these lines:
+  - [ ] Every message goes into the "actual" chat history, that is kept with the chat, in the project, in the app
+  - [ ] Every message is also added to the "virtual" chat history, which is the context being sent to the LLM with new chat messages
+  - [ ] For each new message, divide text up into words
+  - [ ] Every 700 words = 1000 tokens according to our calculations
+  - [ ] If we get over 4000 tokens in a virtual chat history, we start removing the older messages from the virtual chat history (not the opening summary if there is one) and summarizing them
+    - [ ] If there is a cheap external LLM configured for summarization, use that
+    - [ ] Better still, if ollama is installed and configured to be used for summarization, use that
+    - [ ] The algorithm should be such that "previous summary" + "oldest messages" --> "new summary" that is around 1000 words total, or 1,500 tokens
+    - [ ] Remove messages from the chat history, starting with the oldest ones, and add them to the summary using resummarization by the LLM until the threshold is down to 3000 tokens again
+    - [ ] In the end, the virtual chat history is summary + most recent messages + the message we're sending now
+
 
 ## Markdown Support
 
@@ -63,8 +86,8 @@
 1. ✅ **Unify model discovery**: expose refreshable provider model lists in global settings and per-project overrides; normalize provider inference when models or endpoints imply Ollama.
 2. ✅ **Automated Ollama model catalog**: native catalog service merges installed tags with the online library, flags recommended models, and drives download/install prompts.
 3. ✅ **Ollama lifecycle management**: detect missing daemon, start/stop it when switching models, and surface background process state/terminal access through the UI.
-4. 🔄 **Provider branding**: cache provider favicons, refresh them on startup, and display icons plus tooltips alongside the active model name.
-5. 🔄 **Conversation bootstrap**: attach project instructions and relevant file metadata to the first message for new chats.
+4. ✅ **Provider branding**: cache provider favicons, refresh them on startup, and display icons plus tooltips alongside the active model name.
+5. 🔄 **Conversation bootstrap**: attach project instructions and relevant file metadata to the first message for new chats. (Instructions and conversation history are in place; file metadata awaits the project file fix.)
 6. 🔄 **File handling**: separate project files from chat uploads, expose them for the LLM on demand, and manage retention policies.
 7. 🔄 **Memory persistence**: persist short-term chat memories for providers without native support and integrate with native capabilities when they exist.
 8. 🔄 **Cross-chat context**: surface summaries of related chats during session initialization based on project history.

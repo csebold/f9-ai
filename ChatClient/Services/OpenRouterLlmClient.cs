@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using ChatClient.Models;
 
 namespace ChatClient.Services;
 
@@ -53,7 +54,35 @@ internal sealed class OpenRouterLlmClient : ILlmClient
             messages.Add(new ChatMessage("system", request.Instructions!));
         }
 
-        messages.Add(new ChatMessage("user", prompt));
+        var includesCurrentPrompt = false;
+
+        if (request.History.Count > 0)
+        {
+            foreach (var historyMessage in request.History)
+            {
+                var role = historyMessage.Role switch
+                {
+                    MessageRole.User => "user",
+                    MessageRole.Assistant => "assistant",
+                    MessageRole.System => "system",
+                    _ => "user"
+                };
+
+                messages.Add(new ChatMessage(role, historyMessage.Content));
+
+                if (!includesCurrentPrompt
+                    && historyMessage.Role == MessageRole.User
+                    && string.Equals(historyMessage.Content, prompt, StringComparison.Ordinal))
+                {
+                    includesCurrentPrompt = true;
+                }
+            }
+        }
+
+        if (!includesCurrentPrompt)
+        {
+            messages.Add(new ChatMessage("user", prompt));
+        }
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _endpoint);
         httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
@@ -69,30 +98,66 @@ internal sealed class OpenRouterLlmClient : ILlmClient
         }
 
         var payload = new ChatCompletionRequest(_model, messages, _temperature);
+        var payloadJson = JsonSerializer.Serialize(payload, SerializerOptions);
+        httpRequest.Content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
 
-        httpRequest.Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json");
-
-        using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
+        var metadata = new List<string>
         {
-            throw new InvalidOperationException($"OpenRouter request failed: {response.StatusCode} {responseText}");
+            $"Model: {_model}",
+            $"Temperature: {_temperature}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(_referer))
+        {
+            metadata.Add($"Referer: {_referer}");
         }
 
-        var completion = JsonSerializer.Deserialize<ChatCompletionResponse>(responseText, SerializerOptions);
-        if (completion?.Choices is null || completion.Choices.Count == 0)
+        if (!string.IsNullOrWhiteSpace(_appTitle))
         {
-            throw new InvalidOperationException("OpenRouter returned an empty response.");
+            metadata.Add($"App Title: {_appTitle}");
         }
 
-        var assistantMessage = completion.Choices[0].Message?.Content;
-        if (string.IsNullOrWhiteSpace(assistantMessage))
+        try
         {
-            throw new InvalidOperationException("OpenRouter response did not include any assistant content.");
-        }
+            await ChatLogScope.LogAsync("SEND", $"OpenRouter POST {_endpoint}", metadata, payloadJson).ConfigureAwait(false);
 
-        return assistantMessage.Trim();
+            using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            var responseText = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var statusText = $"{(int)response.StatusCode} {response.StatusCode}";
+            await ChatLogScope.LogAsync("RECEIVE", $"OpenRouter HTTP {statusText}", metadata, responseText).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException($"OpenRouter request failed: {response.StatusCode} {responseText}");
+            }
+
+            var completion = JsonSerializer.Deserialize<ChatCompletionResponse>(responseText, SerializerOptions);
+            if (completion?.Choices is null || completion.Choices.Count == 0)
+            {
+                throw new InvalidOperationException("OpenRouter returned an empty response.");
+            }
+
+            var assistantMessage = completion.Choices[0].Message?.Content;
+            if (string.IsNullOrWhiteSpace(assistantMessage))
+            {
+                throw new InvalidOperationException("OpenRouter response did not include any assistant content.");
+            }
+
+            return assistantMessage.Trim();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await ChatLogScope.LogAsync(
+                "ERROR",
+                "OpenRouter request failed",
+                new[] { ex.GetType().Name },
+                ex.Message).ConfigureAwait(false);
+            throw;
+        }
     }
 
     private sealed record ChatCompletionRequest(string Model, IReadOnlyList<ChatMessage> Messages, double Temperature);

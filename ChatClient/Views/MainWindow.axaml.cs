@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.Diagnostics;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Sockets;
@@ -34,6 +35,7 @@ public partial class MainWindow : Window
     private readonly IOllamaProcessManager _ollamaProcessManager;
     private readonly IProviderBrandingService _providerBrandingService;
     private readonly IProjectFileService _projectFileService;
+    private readonly ChatLogService _chatLogService = new();
     private readonly ObservableCollection<ProjectListItem> _projectItems = new();
     private readonly ObservableCollection<ChatSessionListItem> _sessionItems = new();
     private readonly Dictionary<string, ProjectSessionState> _sessionStates = new(StringComparer.Ordinal);
@@ -148,6 +150,7 @@ public partial class MainWindow : Window
         if (_viewModel is not null)
         {
             _viewModel.Messages.CollectionChanged -= OnMessagesCollectionChanged;
+            _viewModel.SetChatLogHandle(null);
         }
 
         _viewModel = DataContext as MainWindowViewModel;
@@ -730,6 +733,30 @@ public partial class MainWindow : Window
         RefreshSessionsForProject(projectKey, session.Id);
     }
 
+    private void OpenChatLogButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel?.ChatLogPath is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = _viewModel.ChatLogPath,
+                UseShellExecute = true
+            };
+            Process.Start(startInfo);
+            _viewModel.StatusMessage = $"Opened chat log at {_viewModel.ChatLogPath}";
+        }
+        catch (Exception ex)
+        {
+            _viewModel.StatusMessage = $"Failed to open chat log: {ex.Message}";
+            _viewModel.ErrorSummary = ex.Message;
+        }
+    }
+
     private async Task<AppSettings?> ShowSettingsDialogAsync(SettingsWindow dialog)
     {
         try
@@ -854,6 +881,7 @@ public partial class MainWindow : Window
             var shouldPersistSessions = persist || isUpdate || emitStatusMessage;
 
             _activeSession = activeSession;
+            ActivateChatLog(activeSession);
             _suppressMessageSync = true;
             _viewModel.ResetMessages(activeSession.Messages, includeWelcomeWhenEmpty: true);
             ResetAutoScroll(requestScroll: true);
@@ -1323,6 +1351,7 @@ public partial class MainWindow : Window
         }
 
         _activeSession = session;
+        ActivateChatLog(session);
 
         _suppressMessageSync = true;
         _viewModel.ResetMessages(session.Messages, includeWelcomeWhenEmpty: true);
@@ -1357,7 +1386,9 @@ public partial class MainWindow : Window
                     sessionSnapshot.Title,
                     sessionSnapshot.CreatedAt,
                     sessionSnapshot.UpdatedAt,
-                    sessionSnapshot.Messages);
+                    sessionSnapshot.Messages,
+                    sessionSnapshot.LogPath);
+                EnsureSessionLogPath(session);
                 UpdateSessionMetadata(session);
                 state.Sessions.Add(session);
             }
@@ -1658,7 +1689,8 @@ public partial class MainWindow : Window
                     Title = session.Title,
                     CreatedAt = session.CreatedAt,
                     UpdatedAt = session.UpdatedAt,
-                    Messages = session.Messages.ToList()
+                    Messages = session.Messages.ToList(),
+                    LogPath = session.LogPath
                 });
             }
 
@@ -1688,6 +1720,7 @@ public partial class MainWindow : Window
                     sessionState.Title = sessionSnapshot.Title;
                     sessionState.CreatedAt = sessionSnapshot.CreatedAt;
                     sessionState.UpdatedAt = sessionSnapshot.UpdatedAt;
+                    sessionState.LogPath = sessionSnapshot.LogPath;
                     sessionState.Messages.Clear();
                     sessionState.Messages.AddRange(sessionSnapshot.Messages);
                 }
@@ -1698,9 +1731,11 @@ public partial class MainWindow : Window
                         sessionSnapshot.Title,
                         sessionSnapshot.CreatedAt,
                         sessionSnapshot.UpdatedAt,
-                        sessionSnapshot.Messages);
+                        sessionSnapshot.Messages,
+                        sessionSnapshot.LogPath);
                 }
 
+                EnsureSessionLogPath(sessionState);
                 state.Sessions.Add(sessionState);
             }
 
@@ -1721,6 +1756,24 @@ public partial class MainWindow : Window
                                  ?? state.Sessions.FirstOrDefault();
             }
         }
+    }
+
+    private ChatLogHandle EnsureSessionLogPath(ChatSessionState session)
+    {
+        if (session is null)
+        {
+            throw new ArgumentNullException(nameof(session));
+        }
+
+        var handle = _chatLogService.GetOrCreate(session.Id, session.LogPath);
+        session.LogPath = handle.Path;
+        return handle;
+    }
+
+    private void ActivateChatLog(ChatSessionState session)
+    {
+        var handle = EnsureSessionLogPath(session);
+        _viewModel?.SetChatLogHandle(handle);
     }
 
     private ProjectSessionState EnsureProjectSession(string projectKey)
@@ -1744,6 +1797,7 @@ public partial class MainWindow : Window
         var now = DateTimeOffset.UtcNow;
         var session = new ChatSessionState(Guid.NewGuid().ToString("N"), "New Chat", now, now);
         projectState.Sessions.Add(session);
+        EnsureSessionLogPath(session);
         return session;
     }
 
@@ -1866,6 +1920,7 @@ public partial class MainWindow : Window
         if (_viewModel is not null)
         {
             _viewModel.Messages.CollectionChanged -= OnMessagesCollectionChanged;
+            _viewModel.SetChatLogHandle(null);
         }
 
         if (_conversationScrollViewer is not null)
@@ -1874,6 +1929,7 @@ public partial class MainWindow : Window
         }
 
         ScalingChanged -= OnScalingChanged;
+        _chatLogService.Dispose();
     }
 
     public sealed class ProjectListItem
@@ -1908,13 +1964,14 @@ public partial class MainWindow : Window
 
     public sealed class ChatSessionState
     {
-        public ChatSessionState(string id, string title, DateTimeOffset createdAt, DateTimeOffset updatedAt, IEnumerable<Message>? messages = null)
+        public ChatSessionState(string id, string title, DateTimeOffset createdAt, DateTimeOffset updatedAt, IEnumerable<Message>? messages = null, string? logPath = null)
         {
             Id = string.IsNullOrWhiteSpace(id) ? Guid.NewGuid().ToString("N") : id;
             Title = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
             CreatedAt = createdAt;
             UpdatedAt = updatedAt;
             Messages = messages?.Where(m => m is not null).ToList() ?? new List<Message>();
+            LogPath = string.IsNullOrWhiteSpace(logPath) ? null : logPath;
         }
 
         public string Id { get; }
@@ -1926,6 +1983,8 @@ public partial class MainWindow : Window
         public DateTimeOffset UpdatedAt { get; set; }
 
         public List<Message> Messages { get; }
+
+        public string? LogPath { get; set; }
     }
 
     public sealed class ChatSessionListItem

@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using ChatClient.Models;
 
 namespace ChatClient.Services;
 
@@ -46,32 +47,85 @@ internal sealed class OllamaLlmClient : ILlmClient
             messages.Add(new ChatMessage("system", request.Instructions!));
         }
 
-        messages.Add(new ChatMessage("user", prompt));
+        var includesCurrentPrompt = false;
+
+        if (request.History.Count > 0)
+        {
+            foreach (var historyMessage in request.History)
+            {
+                var role = historyMessage.Role switch
+                {
+                    MessageRole.User => "user",
+                    MessageRole.Assistant => "assistant",
+                    MessageRole.System => "system",
+                    _ => "user"
+                };
+
+                messages.Add(new ChatMessage(role, historyMessage.Content));
+
+                if (!includesCurrentPrompt
+                    && historyMessage.Role == MessageRole.User
+                    && string.Equals(historyMessage.Content, prompt, StringComparison.Ordinal))
+                {
+                    includesCurrentPrompt = true;
+                }
+            }
+        }
+
+        if (!includesCurrentPrompt)
+        {
+            messages.Add(new ChatMessage("user", prompt));
+        }
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _endpoint);
 
         var payload = new ChatRequest(_model, messages, Stream: false);
+        var payloadJson = JsonSerializer.Serialize(payload, SerializerOptions);
+        httpRequest.Content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
 
-        httpRequest.Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json");
-
-        using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-            .ConfigureAwait(false);
-
-        var responseText = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-
-        if (!response.IsSuccessStatusCode)
+        var metadata = new[]
         {
-            throw new InvalidOperationException($"Ollama request failed: {response.StatusCode} {responseText}");
-        }
+            $"Model: {_model}"
+        };
 
-        var completion = JsonSerializer.Deserialize<ChatResponse>(responseText, SerializerOptions);
-        var assistantMessage = completion?.Message?.Content;
-        if (string.IsNullOrWhiteSpace(assistantMessage))
+        try
         {
-            throw new InvalidOperationException("Ollama response did not include any assistant content.");
-        }
+            await ChatLogScope.LogAsync("SEND", $"Ollama POST {_endpoint}", metadata, payloadJson).ConfigureAwait(false);
 
-        return assistantMessage.Trim();
+            using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+
+            var responseText = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var statusText = $"{(int)response.StatusCode} {response.StatusCode}";
+            await ChatLogScope.LogAsync("RECEIVE", $"Ollama HTTP {statusText}", metadata, responseText).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException($"Ollama request failed: {response.StatusCode} {responseText}");
+            }
+
+            var completion = JsonSerializer.Deserialize<ChatResponse>(responseText, SerializerOptions);
+            var assistantMessage = completion?.Message?.Content;
+            if (string.IsNullOrWhiteSpace(assistantMessage))
+            {
+                throw new InvalidOperationException("Ollama response did not include any assistant content.");
+            }
+
+            return assistantMessage.Trim();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await ChatLogScope.LogAsync(
+                "ERROR",
+                "Ollama request failed",
+                new[] { ex.GetType().Name },
+                ex.Message).ConfigureAwait(false);
+            throw;
+        }
     }
 
     private sealed record ChatRequest(string Model, IReadOnlyList<ChatMessage> Messages, bool Stream);

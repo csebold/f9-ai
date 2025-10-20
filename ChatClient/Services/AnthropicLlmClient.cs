@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using ChatClient.Models;
 
 namespace ChatClient.Services;
 
@@ -50,43 +51,105 @@ internal sealed class AnthropicLlmClient : ILlmClient
         httpRequest.Headers.TryAddWithoutValidation("x-api-key", _apiKey);
         httpRequest.Headers.TryAddWithoutValidation("anthropic-version", "2023-06-01");
 
-        var payload = new AnthropicRequest(
-            _model,
-            _maxTokens,
-            new[]
+        var messages = new List<AnthropicMessage>();
+        var includesCurrentPrompt = false;
+
+        if (request.History.Count > 0)
+        {
+            foreach (var historyMessage in request.History)
             {
-                new AnthropicMessage("user", new[]
+                var role = historyMessage.Role switch
                 {
-                    new AnthropicContent("text", prompt)
-                })
-            },
-            request.IncludeInstructions ? request.Instructions : null);
+                    MessageRole.User => "user",
+                    MessageRole.Assistant => "assistant",
+                    _ => null
+                };
 
-        httpRequest.Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json");
+                if (role is null)
+                {
+                    continue;
+                }
 
-        using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
+                messages.Add(new AnthropicMessage(role, new[]
+                {
+                    new AnthropicContent("text", historyMessage.Content)
+                }));
 
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new InvalidOperationException($"Anthropic request failed: {response.StatusCode} {responseText}");
-        }
-
-        var completion = JsonSerializer.Deserialize<AnthropicResponse>(responseText, SerializerOptions);
-        if (completion?.Content is null || completion.Content.Count == 0)
-        {
-            throw new InvalidOperationException("Anthropic returned an empty response.");
-        }
-
-        foreach (var content in completion.Content)
-        {
-            if (content.Type == "text" && !string.IsNullOrWhiteSpace(content.Text))
-            {
-                return content.Text.Trim();
+                if (!includesCurrentPrompt
+                    && historyMessage.Role == MessageRole.User
+                    && string.Equals(historyMessage.Content, prompt, StringComparison.Ordinal))
+                {
+                    includesCurrentPrompt = true;
+                }
             }
         }
 
-        throw new InvalidOperationException("Anthropic response did not include any textual content.");
+        if (!includesCurrentPrompt)
+        {
+            messages.Add(new AnthropicMessage("user", new[]
+            {
+                new AnthropicContent("text", prompt)
+            }));
+        }
+
+        var payload = new AnthropicRequest(
+            _model,
+            _maxTokens,
+            messages,
+            request.IncludeInstructions ? request.Instructions : null);
+        var payloadJson = JsonSerializer.Serialize(payload, SerializerOptions);
+
+        httpRequest.Content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
+
+        var metadata = new[]
+        {
+            $"Model: {_model}",
+            $"Max Tokens: {_maxTokens}"
+        };
+
+        try
+        {
+            await ChatLogScope.LogAsync("SEND", $"Anthropic POST {_endpoint}", metadata, payloadJson).ConfigureAwait(false);
+
+            using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            var responseText = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var statusText = $"{(int)response.StatusCode} {response.StatusCode}";
+            await ChatLogScope.LogAsync("RECEIVE", $"Anthropic HTTP {statusText}", metadata, responseText).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException($"Anthropic request failed: {response.StatusCode} {responseText}");
+            }
+
+            var completion = JsonSerializer.Deserialize<AnthropicResponse>(responseText, SerializerOptions);
+            if (completion?.Content is null || completion.Content.Count == 0)
+            {
+                throw new InvalidOperationException("Anthropic returned an empty response.");
+            }
+
+            foreach (var content in completion.Content)
+            {
+                if (content.Type == "text" && !string.IsNullOrWhiteSpace(content.Text))
+                {
+                    return content.Text.Trim();
+                }
+            }
+
+            throw new InvalidOperationException("Anthropic response did not include any textual content.");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await ChatLogScope.LogAsync(
+                "ERROR",
+                "Anthropic request failed",
+                new[] { ex.GetType().Name },
+                ex.Message).ConfigureAwait(false);
+            throw;
+        }
     }
 
     private sealed record AnthropicRequest(

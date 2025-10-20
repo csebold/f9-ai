@@ -32,4 +32,6 @@ public sealed class ChatSessionSnapshot
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public List<Message> Messages { get; set; } = new();
+
+    public string? LogPath { get; set; }
 }

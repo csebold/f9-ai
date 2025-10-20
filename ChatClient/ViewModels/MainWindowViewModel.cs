@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Threading;
 using ChatClient.Models;
 using ChatClient.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -20,11 +21,11 @@ public partial class MainWindowViewModel : ViewModelBase
     private LlmClientRegistration _registration = null!;
     private IBackgroundProcessService? _backgroundProcessService;
     private readonly Dictionary<string, BackgroundProcessItemViewModel> _processLookup = new(StringComparer.Ordinal);
+    private ChatLogHandle? _chatLogHandle;
 
     public ObservableCollection<Message> Messages { get; } = new();
     public ObservableCollection<ProjectFileItemViewModel> ProjectFiles { get; } = new();
     public ObservableCollection<BackgroundProcessItemViewModel> BackgroundProcesses { get; } = new();
-
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SendCommand))]
     private string _prompt = string.Empty;
@@ -72,6 +73,9 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string? _errorSummary;
 
+    [ObservableProperty]
+    private string? _chatLogPath;
+
     private CancellationTokenSource? _responseCancellation;
     private string? _lastPrompt;
     private bool _systemContextSent;
@@ -90,7 +94,6 @@ public partial class MainWindowViewModel : ViewModelBase
         StopCommand = new RelayCommand(StopRequest, CanStopRequest);
         RetryCommand = new AsyncRelayCommand(RetryAsync, CanRetryRequest);
         _backgroundProcessService = backgroundProcessService;
-
         ResetMessages(initialMessages, includeWelcomeWhenEmpty: true);
 
         var name = string.IsNullOrWhiteSpace(projectName) ? DefaultProjectName : projectName.Trim();
@@ -199,6 +202,42 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    public void SetChatLogHandle(ChatLogHandle? handle)
+    {
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            SetChatLogHandleCore(handle);
+        }
+        else
+        {
+            Dispatcher.UIThread.Post(() => SetChatLogHandleCore(handle));
+        }
+    }
+
+    private void SetChatLogHandleCore(ChatLogHandle? handle)
+    {
+        if (ReferenceEquals(_chatLogHandle, handle))
+        {
+            return;
+        }
+
+        if (_chatLogHandle is not null)
+        {
+            _chatLogHandle.EntryAppended -= OnChatLogEntryAppended;
+        }
+
+        _chatLogHandle = handle;
+
+        if (_chatLogHandle is null)
+        {
+            ChatLogPath = null;
+            return;
+        }
+
+        ChatLogPath = _chatLogHandle.Path;
+        _chatLogHandle.EntryAppended += OnChatLogEntryAppended;
+    }
+
     private void AddOrUpdateProcess(BackgroundProcessSnapshot snapshot)
     {
         if (_processLookup.TryGetValue(snapshot.Id, out var existing))
@@ -292,18 +331,28 @@ public partial class MainWindowViewModel : ViewModelBase
             AddMessage("You", prompt, MessageRole.User);
         }
 
+        await LogUserPromptAsync(prompt);
+
         var cancellation = new CancellationTokenSource();
         _responseCancellation = cancellation;
         var stopwatch = Stopwatch.StartNew();
 
         try
         {
+            // Logging finished above; ensure UI state updates happen on the UI thread.
             IsResponding = true;
             StatusMessage = $"Requesting response from {CurrentProvider} ({CurrentModel})...";
 
             var systemContext = BuildSystemContext();
             var includeSystemContext = !_systemContextSent && !string.IsNullOrWhiteSpace(systemContext);
-            var request = new LlmRequest(prompt, systemContext, includeSystemContext);
+            var history = Messages
+                .Where(static message => message is not null && (message.Role == MessageRole.User || message.Role == MessageRole.Assistant))
+                .Select(static message => new LlmMessage(message.Role, message.Content))
+                .ToList();
+
+            var request = new LlmRequest(prompt, systemContext, includeSystemContext, history);
+
+            using var logScope = ChatLogScope.Push(_chatLogHandle);
             var response = await _llmClient.GetResponseAsync(request, cancellation.Token);
 
             if (includeSystemContext)
@@ -316,6 +365,7 @@ public partial class MainWindowViewModel : ViewModelBase
             if (!string.IsNullOrWhiteSpace(response))
             {
                 AddMessage("Assistant", response.Trim(), MessageRole.Assistant);
+                await LogAssistantResponseAsync(response.Trim());
             }
 
             StatusMessage = $"Responded in {FormatLatency(stopwatch.Elapsed)} via {CurrentProvider} ({CurrentModel}).";
@@ -324,6 +374,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             stopwatch.Stop();
             StatusMessage = "Request canceled.";
+            await LogCancellationAsync();
         }
         catch (Exception ex)
         {
@@ -332,6 +383,7 @@ public partial class MainWindowViewModel : ViewModelBase
             ErrorSummary = ex.Message;
             CanRetry = true;
             AddMessage("System", $"Error contacting LLM: {ex.Message}", MessageRole.System);
+            await LogChatErrorAsync(ex);
         }
         finally
         {
@@ -474,6 +526,41 @@ public partial class MainWindowViewModel : ViewModelBase
             ? CurrentProvider
             : branding.DisplayName;
     }
+
+    private void OnChatLogEntryAppended(object? sender, string entry)
+    {
+        // No-op now that in-window log tail has been removed; keep method to avoid unregister changes.
+    }
+
+    private Task LogChatAsync(string kind, string message, IEnumerable<string>? metadata, string? body, bool isBinary = false)
+    {
+        var handle = _chatLogHandle;
+        if (handle is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        return handle.AppendAsync(kind, message, metadata, body, isBinary);
+    }
+
+    private Task LogUserPromptAsync(string prompt) =>
+        LogChatAsync("USER", "Prompt", null, prompt);
+
+    private Task LogAssistantResponseAsync(string response) =>
+        LogChatAsync("ASSISTANT", $"{CurrentProvider} response", null, response);
+
+    private Task LogChatErrorAsync(Exception ex)
+    {
+        var metadata = new[]
+        {
+            ex.GetType().Name
+        };
+
+        return LogChatAsync("ERROR", $"{CurrentProvider} request failed", metadata, ex.Message);
+    }
+
+    private Task LogCancellationAsync() =>
+        LogChatAsync("INFO", "Request canceled", null, null);
 
     private void AddMessage(string author, string content, MessageRole role)
     {
