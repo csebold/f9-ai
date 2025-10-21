@@ -24,7 +24,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly Dictionary<string, BackgroundProcessItemViewModel> _processLookup = new(StringComparer.Ordinal);
     private ChatLogHandle? _chatLogHandle;
 
-    public ObservableCollection<Message> Messages { get; } = new();
+    public ObservableCollection<MessageViewModel> Messages { get; } = new();
     public ObservableCollection<ProjectFileItemViewModel> ProjectFiles { get; } = new();
     public ObservableCollection<BackgroundProcessItemViewModel> BackgroundProcesses { get; } = new();
     public ObservableCollection<ProjectFileItemViewModel> ChatFiles { get; } = new();
@@ -529,7 +529,7 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 if (message is not null)
                 {
-                    Messages.Add(message);
+                    Messages.Add(new MessageViewModel(message));
                 }
             }
         }
@@ -654,7 +654,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void AddMessage(string author, string content, MessageRole role)
     {
-        Messages.Add(new Message(author, content, DateTimeOffset.Now, role));
+        Messages.Add(new MessageViewModel(new Message(author, content, DateTimeOffset.Now, role)));
     }
 
     private static string FormatFileSize(long bytes)

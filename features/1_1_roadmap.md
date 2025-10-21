@@ -81,9 +81,9 @@
 
 ## Markdown Support
 
-- [ ] Format and display Markdown in responses.
-- [ ] Optionally display source in responses.
-- [ ] Optionally display sent messages as formatted Markdown.
+- [x] Format and display Markdown in responses.
+- [x] Optionally display source in responses.
+- [x] Optionally display sent messages as formatted Markdown.
 
 ## Implementation Plan
 

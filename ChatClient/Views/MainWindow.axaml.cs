@@ -1559,7 +1559,7 @@ public partial class MainWindow : Window
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            _viewModel.Messages.Add(new Message("System", message, DateTimeOffset.Now, MessageRole.System));
+            _viewModel.Messages.Add(new MessageViewModel(new Message("System", message, DateTimeOffset.Now, MessageRole.System)));
             if (isError)
             {
                 _viewModel.ErrorSummary = message;
@@ -1987,9 +1987,9 @@ public partial class MainWindow : Window
         }
 
         _activeSession.Messages.Clear();
-        foreach (var message in _viewModel.Messages)
+        foreach (var messageViewModel in _viewModel.Messages)
         {
-            _activeSession.Messages.Add(message);
+            _activeSession.Messages.Add(messageViewModel.UnderlyingMessage);
         }
 
         UpdateSessionMetadata(_activeSession);

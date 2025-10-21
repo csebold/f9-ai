@@ -92,7 +92,7 @@ public class MainWindowViewModelTests
         viewModel.Prompt = "Hello";
         await viewModel.SendCommand.ExecuteAsync(null);
 
-        Assert.Equal(1, client.Requests.Count);
+        Assert.Single(client.Requests);
         var firstHistory = client.Requests[0].History;
         Assert.Single(firstHistory);
         Assert.Equal(MessageRole.User, firstHistory[0].Role);

@@ -1,10 +1,11 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:ChatClient.ViewModels"
-        xmlns:model="using:ChatClient.Models"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:views="using:ChatClient.Views"
+  xmlns:model="using:ChatClient.Models"
+  xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:views="using:ChatClient.Views"
+  xmlns:md="https://github.com/whistyun/Markdown.Avalonia"
         mc:Ignorable="d"
         d:DesignWidth="1120"
         d:DesignHeight="720"
@@ -79,6 +80,7 @@
       <conv:BooleanNegationConverter x:Key="BooleanNegationConverter" />
       <conv:MessageTimestampDisplayConverter x:Key="MessageTimestampDisplayConverter" />
       <conv:MessageTimestampTooltipConverter x:Key="MessageTimestampTooltipConverter" />
+      <conv:MarkdownToggleColorConverter x:Key="MarkdownToggleColorConverter" />
 
     </ResourceDictionary>
   </Window.Resources>
@@ -376,7 +378,7 @@
                 </ItemsPanelTemplate>
               </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="model:Message">
+              <DataTemplate>
                 <Border Margin="{Binding Role, Converter={StaticResource MessageRoleToMarginConverter}}"
                         Padding="{DynamicResource ConversationMessagePadding}"
                         CornerRadius="{DynamicResource ConversationMessageCornerRadius}"
@@ -386,16 +388,40 @@
                         HorizontalAlignment="{Binding Role, Converter={StaticResource MessageRoleToHorizontalAlignmentConverter}}"
                         MaxWidth="{Binding Bounds.Width, RelativeSource={RelativeSource AncestorType=ScrollViewer}, Converter={StaticResource TwoThirdsWidthConverter}}">
                   <StackPanel Spacing="4">
-                    <TextBlock Text="{Binding Author}"
-                               FontWeight="SemiBold"
-                               FontStyle="{Binding Role, Converter={StaticResource MessageRoleToFontStyleConverter}}"
-                               Foreground="{DynamicResource AuthorForegroundBrush}"
-                               TextAlignment="{Binding Role, Converter={StaticResource MessageRoleToTextAlignmentConverter}}" />
-                    <TextBlock Text="{Binding Content}"
-                               TextWrapping="Wrap"
-                               FontStyle="{Binding Role, Converter={StaticResource MessageRoleToFontStyleConverter}}"
-                               Foreground="{DynamicResource MessageForegroundBrush}"
-                               TextAlignment="{Binding Role, Converter={StaticResource MessageRoleToTextAlignmentConverter}}" />
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Grid.Column="0"
+                                 Text="{Binding Author}"
+                                 FontWeight="SemiBold"
+                                 FontStyle="{Binding Role, Converter={StaticResource MessageRoleToFontStyleConverter}}"
+                                 Foreground="{DynamicResource AuthorForegroundBrush}"
+                                 TextAlignment="{Binding Role, Converter={StaticResource MessageRoleToTextAlignmentConverter}}" />
+                      <Button Grid.Column="1"
+                              Content="&lt;/&gt;"
+                              Command="{Binding ToggleMarkdownCommand}"
+                              Foreground="{Binding IsShowingMarkdown, Converter={StaticResource MarkdownToggleColorConverter}}"
+                              FontSize="12"
+                              FontWeight="Bold"
+                              Padding="8,4"
+                              Margin="4,0,0,0"
+                              VerticalAlignment="Center"
+                              ToolTip.Tip="Toggle between Markdown and source view" />
+                    </Grid>
+                    
+                    <!-- Content display: either Markdown or source -->
+                    <!-- Markdown rendered view -->
+                    <md:MarkdownScrollViewer Markdown="{Binding Content}"
+                                            MarkdownStyleName="GithubLike"
+                                            UseResource="True"
+                                            IsVisible="{Binding IsShowingMarkdown}" />
+                    
+                    <!-- Source code view -->
+                    <SelectableTextBlock Text="{Binding Content}"
+                                        IsVisible="{Binding IsShowingMarkdown, Converter={StaticResource BooleanNegationConverter}}"
+                                        TextWrapping="Wrap"
+                                        FontStyle="{Binding Role, Converter={StaticResource MessageRoleToFontStyleConverter}}"
+                                        Foreground="{DynamicResource MessageForegroundBrush}"
+                                        TextAlignment="{Binding Role, Converter={StaticResource MessageRoleToTextAlignmentConverter}}" />
+                    
                     <TextBlock Text="{Binding Timestamp, Converter={StaticResource MessageTimestampDisplayConverter}}"
                                FontSize="11"
                                Foreground="{DynamicResource TimestampForegroundBrush}"
