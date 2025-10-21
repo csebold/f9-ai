@@ -1,6 +1,8 @@
 using System;
 using System.Windows.Input;
+using Avalonia.Controls;
 using ChatClient.Models;
+using ChatClient.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -11,8 +13,12 @@ namespace ChatClient.ViewModels;
 /// </summary>
 public partial class MessageViewModel : ViewModelBase
 {
+    private static MarkdownToAvaloniaRenderer? _sharedRenderer;
+    private static MarkdownToAvaloniaRenderer SharedRenderer => _sharedRenderer ??= new MarkdownToAvaloniaRenderer();
+    
     private readonly Message _message;
     private bool _isShowingMarkdown = true; // Default to Markdown mode
+    private Control? _renderedContent;
 
     public MessageViewModel(Message message)
     {
@@ -40,6 +46,37 @@ public partial class MessageViewModel : ViewModelBase
                 _isShowingMarkdown = value;
                 OnPropertyChanged(nameof(IsShowingMarkdown));
             }
+        }
+    }
+
+    /// <summary>
+    /// Gets the rendered markdown content as an Avalonia Control.
+    /// Lazily rendered on first access and cached.
+    /// Returns null if called during design mode or before app initialization.
+    /// </summary>
+    public Control? RenderedContent
+    {
+        get
+        {
+            if (_renderedContent is null)
+            {
+                // Don't try to create controls if we're in design mode or during XAML compilation
+                if (Avalonia.Controls.Design.IsDesignMode || Avalonia.Application.Current is null)
+                {
+                    return null;
+                }
+                
+                try
+                {
+                    _renderedContent = SharedRenderer.RenderToControl(Content);
+                }
+                catch
+                {
+                    // If rendering fails, return null to prevent crash
+                    return null;
+                }
+            }
+            return _renderedContent;
         }
     }
 

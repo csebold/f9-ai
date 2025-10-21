@@ -12,7 +12,6 @@ using ChatClient.Models;
 using ChatClient.Services;
 using ChatClient.ViewModels;
 using ChatClient.Views;
-using Markdown.Avalonia;
 
 namespace ChatClient;
 
@@ -42,8 +41,6 @@ public partial class App : Application
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
-        // Bring in Markdown.Avalonia styles so MarkdownScrollViewer renders rich content
-        Styles.Add(MarkdownStyle.GithubLike);
     }
 
     public override void OnFrameworkInitializationCompleted()
